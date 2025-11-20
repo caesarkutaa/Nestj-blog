@@ -5,10 +5,24 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
- app.use(helmet());
-  app.enableCors(); // adjust origin in production
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  await app.listen(8080);
-  console.log('Server listening on http://localhost:8080');
-}   
+
+  // Security headers
+  app.use(helmet());
+
+  // Enable CORS
+  app.enableCors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  });
+
+  // Global validation
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, transform: true })
+  );
+
+  // Use the port Render assigns
+  const PORT = process.env.PORT || 8080;
+  await app.listen(PORT);
+  console.log(`Server listening on port ${PORT}`);
+}
+
 bootstrap();
