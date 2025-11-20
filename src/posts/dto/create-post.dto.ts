@@ -7,17 +7,17 @@ export class CreatePostDto {
   title: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty()    
   category: string;
 
 
   @IsString()
-  @IsNotEmpty()   
-  slug?: string;
+  @IsOptional()  
+  slug?: string;   
 
   @IsString()
   @IsNotEmpty()
-  content: string;
+  content: string;     
 
   views?: number;
 

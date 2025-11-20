@@ -1,19 +1,56 @@
-import { Body, Controller, Get, Param, Post as HttpPost, UsePipes, ValidationPipe } from '@nestjs/common';
-import { CreateCommentDto } from './dto/create-comment.dto';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Delete,
+  Patch,
+  Query,
+} from '@nestjs/common';
 import { CommentsService } from './comments.service';
+import { CreateCommentDto } from './dto/create-comment.dto';
 
 @Controller('comments')
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
-  @HttpPost(':postId')
-  @UsePipes(new ValidationPipe({ whitelist: true }))
-  async add(@Param('postId') postId: string, @Body() dto: CreateCommentDto) {
-    return this.commentsService.addComment(postId, dto);
+  // --------------------------------------------------
+  // CREATE COMMENT or REPLY
+  // --------------------------------------------------
+  @Post(':postId')
+  async addComment(
+    @Param('postId') postId: string,
+    @Body() body: CreateCommentDto,
+  ) {
+    return this.commentsService.addComment(postId, body);
   }
 
+  // --------------------------------------------------
+  // GET COMMENTS (NESTED)
+  // --------------------------------------------------
   @Get(':postId')
-  async list(@Param('postId') postId: string) {
+  async getComments(@Param('postId') postId: string) {
     return this.commentsService.getForPost(postId);
+  }
+
+  // --------------------------------------------------
+  // DELETE COMMENT (ADMIN)
+  // --------------------------------------------------
+  @Delete(':commentId')
+  async deleteComment(@Param('commentId') commentId: string) {
+    return this.commentsService.deleteComment(commentId);
+  }
+         
+  // --------------------------------------------------
+  // UPDATE COMMENT STATUS (ADMIN)
+  // e.g. approve | pending | rejected
+  // --------------------------------------------------
+  @Patch(':commentId/status')
+  async updateStatus(
+    @Param('commentId') commentId: string,      
+    @Query('status') status: string,
+  ) {
+    return this.commentsService.updateStatus(commentId, status);
   }
 }

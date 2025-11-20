@@ -1,7 +1,7 @@
 // posts.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import { Post } from './schemas/post.schema';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -104,8 +104,9 @@ async update(
     .exec();
 }
 
-  /** ✅ Find One Post by ID */
- async findOne(id: string) {
+  /** ✅ Find One Post by ID */           
+     
+ async findOne(id: string) {    
   const post = await this.postModel
     .findById(id)
     .populate('comments') // ✅ ensure comments are included
@@ -169,8 +170,16 @@ async incrementShareCount(postId: string): Promise<{ sharesCount: number }> {
   return { sharesCount: updated.sharesCount };
 }
 // posts.service.ts
-async findOneWithRelated(id: string) {
-  const post = await this.postModel.findById(id);
+async findOneWithRelated(idOrSlug: string) {
+  let post;
+
+  // Check if the input is a valid ObjectId
+  if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+    post = await this.postModel.findById(idOrSlug);
+  } else {
+    post = await this.postModel.findOne({ slug: idOrSlug }).exec();
+  }
+
   if (!post) throw new NotFoundException('Post not found');
 
   // Find related posts (same category or overlapping keywords)

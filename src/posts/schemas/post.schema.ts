@@ -12,8 +12,8 @@ export class Post {
   @Prop({ type: String, required: true })
   content: string;
 
-  @Prop({ type: String, required: true, unique: true })
-  slug: string;
+  @Prop({ type: String, unique: true })
+  slug?: string;
 
   @Prop({ type: String, required: true })
   category: string;
@@ -47,6 +47,8 @@ views: number;
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Like' }], default: [] })
   likes: Types.ObjectId[];
 
+      
+   
   @Prop({ default: 0 })
   sharesCount: number;
 }

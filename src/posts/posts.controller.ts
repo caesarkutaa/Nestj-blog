@@ -54,22 +54,24 @@ async create(
 
   return this.postsService.create(createDto, featuredImage, contentFiles, adminName);
 }
-
 @UseGuards(JwtAuthGuard)
 @Put(':id')
 @UseInterceptors(
   FileFieldsInterceptor([
-    { name: 'image', maxCount: 1 },          // Featured image
-    { name: 'contentImages', maxCount: 10 }, // Additional content images
+    { name: 'image', maxCount: 1 },
+    { name: 'contentImages', maxCount: 10 },
   ]),
 )
 async update(
   @Param('id') id: string,
   @Body() dto: UpdatePostDto,
-  @UploadedFiles() files: { image?: Express.Multer.File[], contentImages?: Express.Multer.File[] }
+  @UploadedFiles() files?: { 
+    image?: Express.Multer.File[]; 
+    contentImages?: Express.Multer.File[] 
+  },
 ) {
-  const featuredImage = files.image ? files.image[0] : undefined;
-  const contentFiles = files.contentImages || [];
+  const featuredImage = files?.image?.[0];
+  const contentFiles = files?.contentImages || [];
 
   return this.postsService.update(id, dto, featuredImage, contentFiles);
 }

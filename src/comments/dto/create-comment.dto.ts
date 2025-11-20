@@ -1,11 +1,20 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+// create-comment.dto.ts
+import { IsOptional, IsString, IsBoolean } from "class-validator";
 
 export class CreateCommentDto {
   @IsString()
-  @IsNotEmpty()
   name: string;
 
+ 
+
   @IsString()
-  @IsNotEmpty()
   message: string;
+
+  @IsOptional()
+  @IsString()
+  parent?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isAdmin?: boolean;
 }
