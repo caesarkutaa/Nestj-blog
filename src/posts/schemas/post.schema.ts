@@ -55,3 +55,5 @@ views: number;
 
 export const PostSchema = SchemaFactory.createForClass(Post);
 
+
+PostSchema.index({ createdAt: -1 });    

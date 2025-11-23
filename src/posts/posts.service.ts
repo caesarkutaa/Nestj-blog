@@ -96,13 +96,16 @@ async update(
   }
 
   /** ✅ Find All Posts */
- async findAll() {
+async findAll() {
   return this.postModel
     .find()
-    .populate('comments') // 👈 Populates comment details
+    .populate('comments') 
     .sort({ createdAt: -1 })
+    .allowDiskUse(true) // 👈 Added to fix memory limit error
     .exec();
 }
+
+
 
   /** ✅ Find One Post by ID */           
      
@@ -191,7 +194,7 @@ async findOneWithRelated(idOrSlug: string) {
         { keywords: { $in: post.keywords } },
       ],
     })
-    .limit(3)
+    .limit(4)
     .exec();
 
   return { post, related };
