@@ -8,13 +8,13 @@ import {
   Put,
   UseGuards,
   ValidationPipe,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   Request,
   NotFoundException,
-  UploadedFiles,
+  Query
 } from '@nestjs/common';
-import { FileFieldsInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../shared/jwt-auth.guard';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -24,85 +24,96 @@ import { PostsService } from './posts.service';
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
+  /**
+   * ✅ Lightweight list of posts (fast)
+   * GET /posts?limit=10&page=1
+   */
   @Get()
-  async getAll() {
-    return this.postsService.findAll();
+  async getAll(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10
+  ) {
+    return this.postsService.findAll(page, limit);
   }
 
+  /**
+   * ❗ GET full post by ID (includes content + comments)
+   */
   @Get(':id')
   async getOne(@Param('id') id: string) {
     return this.postsService.findOne(id);
   }
 
-  /** ✅ CREATE POST with image upload */
+  /** CREATE POST */
   @UseGuards(JwtAuthGuard)
-@HttpPost()
-@UseInterceptors(
-  FileFieldsInterceptor([
-    { name: 'image', maxCount: 1 },          // Featured image
-    { name: 'contentImages', maxCount: 10 }, // Additional content images
-  ]),
-)
-async create(
-  @UploadedFiles() files: { image?: Express.Multer.File[], contentImages?: Express.Multer.File[] },
-  @Body(new ValidationPipe({ transform: true })) createDto: CreatePostDto,
-  @Request() req,
-) {
-  const adminName = req.user?.username;
-  const featuredImage = files.image ? files.image[0] : undefined;
-  const contentFiles = files.contentImages || [];
+  @HttpPost()
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'image', maxCount: 1 },
+      { name: 'contentImages', maxCount: 10 },
+    ]),
+  )
+  async create(
+    @UploadedFiles()
+    files: { image?: Express.Multer.File[]; contentImages?: Express.Multer.File[] },
+    @Body(new ValidationPipe({ transform: true }))
+    createDto: CreatePostDto,
+    @Request() req,
+  ) {
+    const adminName = req.user?.username;
+    const featuredImage = files.image?.[0];
+    const contentFiles = files.contentImages || [];
+    return this.postsService.create(createDto, featuredImage, contentFiles, adminName);
+  }
 
-  return this.postsService.create(createDto, featuredImage, contentFiles, adminName);
-}
-@UseGuards(JwtAuthGuard)
-@Put(':id')
-@UseInterceptors(
-  FileFieldsInterceptor([
-    { name: 'image', maxCount: 1 },
-    { name: 'contentImages', maxCount: 10 },
-  ]),
-)
-async update(
-  @Param('id') id: string,
-  @Body() dto: UpdatePostDto,
-  @UploadedFiles() files?: { 
-    image?: Express.Multer.File[]; 
-    contentImages?: Express.Multer.File[] 
-  },
-) {
-  const featuredImage = files?.image?.[0];
-  const contentFiles = files?.contentImages || [];
+  /** UPDATE POST */
+  @UseGuards(JwtAuthGuard)
+  @Put(':id')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'image', maxCount: 1 },
+      { name: 'contentImages', maxCount: 10 },
+    ]),
+  )
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdatePostDto,
+    @UploadedFiles()
+    files?: {
+      image?: Express.Multer.File[];
+      contentImages?: Express.Multer.File[];
+    },
+  ) {
+    const featuredImage = files?.image?.[0];
+    const contentFiles = files?.contentImages || [];
+    return this.postsService.update(id, dto, featuredImage, contentFiles);
+  }
 
-  return this.postsService.update(id, dto, featuredImage, contentFiles);
-}
-
-   
-   
+  /** DELETE POST */
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async remove(@Param('id') id: string ) {    
+  async remove(@Param('id') id: string) {
     return this.postsService.remove(id);
   }
 
+  /** SHARE COUNT */
   @UseGuards(JwtAuthGuard)
   @HttpPost(':id/share')
   async sharePost(@Param('id') id: string) {
     return this.postsService.incrementShareCount(id);
   }
 
-  // posts.controller.ts      
-@Get(':id/related')
-async getPost(@Param('id') id: string) {
-  return this.postsService.findOneWithRelated(id);
-}
+  /** RELATED POSTS */
+  @Get(':id/related')
+  async getRelated(@Param('id') id: string) {
+    return this.postsService.findOneWithRelated(id);
+  }
 
-/** ✅ Get post by slug */
+  /** GET POST BY SLUG */
   @Get('slug/:slug')
   async getBySlug(@Param('slug') slug: string) {
     const post = await this.postsService.findBySlug(slug);
     if (!post) throw new NotFoundException('Post not found');
     return post;
   }
-
 }
-    

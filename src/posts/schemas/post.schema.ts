@@ -5,14 +5,14 @@ export type PostDocument = Post & Document;
 
 @Schema({ timestamps: true })
 export class Post {
-  @Prop({ required: true })
+  @Prop({ required: true, index: true })
   title: string;
 
 
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, required: true, index: true })
   content: string;
 
-  @Prop({ type: String, unique: true })
+  @Prop({ type: String, unique: true, index: true })
   slug?: string;
 
   @Prop({ type: String, required: true })
@@ -21,14 +21,14 @@ export class Post {
   @Prop([String])
   contentImages?: string[];
 
-  @Prop({ type: Number, default: 0 })
+  @Prop({ type: Number, default: 0, index: true })
 views: number;
 
 
-  @Prop()
+  @Prop({ index: true })
   image: string;
 
-  @Prop()
+  @Prop({ index: true })
   author: string;
 
   // SEO fields
@@ -38,13 +38,13 @@ views: number;
   @Prop()
   metaDescription?: string;
 
-  @Prop([String])
+  @Prop([String]  )
   keywords?: string[]; // array of keyphrases
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Comment' }], default: [] })
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Comment' }], default: [] , index: true })
   comments: Types.ObjectId[];
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Like' }], default: [] })
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Like' }], default: [] , index: true  })
   likes: Types.ObjectId[];
 
       

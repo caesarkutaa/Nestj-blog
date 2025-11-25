@@ -95,29 +95,44 @@ async update(
     return this.postModel.findByIdAndDelete(id);
   }
 
-  /** ✅ Find All Posts */
-async findAll() {
-  return this.postModel
+/** ✅ Find All Posts with pagination + lean */
+async findAll(page = 1, limit = 10) {
+  const skip = (page - 1) * limit;
+
+  const posts = await this.postModel
     .find()
-    .populate('comments') 
     .sort({ createdAt: -1 })
-    .allowDiskUse(true) // 👈 Added to fix memory limit error
+    .skip(skip)
+    .limit(limit)
+    .select('title slug image likes createdAt category views author') // lightweight
+    .lean()
     .exec();
+
+  const total = await this.postModel.countDocuments();
+
+  return {
+    data: posts,
+    currentPage: page,
+    totalPages: Math.ceil(total / limit),
+    total
+  };
 }
 
 
-
-  /** ✅ Find One Post by ID */           
+ 
      
- async findOne(id: string) {    
+ /** ✅ Find One Post by ID (read-only version) */
+async findOne(id: string) {
   const post = await this.postModel
     .findById(id)
-    .populate('comments') // ✅ ensure comments are included
+    .populate('comments')
+    .lean()                 // ✅ safe (read only)
     .exec();
 
   if (!post) throw new NotFoundException('Post not found');
   return post;
 }
+
    
 
   /** ✅ Like / Unlike a Post */
@@ -172,7 +187,6 @@ async incrementShareCount(postId: string): Promise<{ sharesCount: number }> {
 
   return { sharesCount: updated.sharesCount };
 }
-// posts.service.ts
 async findOneWithRelated(idOrSlug: string) {
   let post;
 
@@ -195,11 +209,11 @@ async findOneWithRelated(idOrSlug: string) {
       ],
     })
     .limit(4)
+    .lean()
     .exec();
 
   return { post, related };
 }
-
 
 /** ✅ Find One Post by Slug */
 async findBySlug(slug: string) {

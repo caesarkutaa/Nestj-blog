@@ -5,6 +5,7 @@ import { AdminModule } from './admin/admin.module';
 import { PostsModule } from './posts/posts.module';
 import { CommentsModule } from './comments/comments.module';
 import { LikesModule } from './likes/likes.module';
+import { CacheService } from './shared/cache.service';
 
 
 @Module({
@@ -23,5 +24,7 @@ import { LikesModule } from './likes/likes.module';
     CommentsModule,
     LikesModule,        
   ],
+   providers: [CacheService],
+   exports: [CacheService],
 })
 export class AppModule {}
