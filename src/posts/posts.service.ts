@@ -104,7 +104,8 @@ async findAll(page = 1, limit = 10) {
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .select('title slug image likes createdAt category views author') // lightweight
+    .select('title slug image likes createdAt category views author')
+    .populate('comments') // lightweight
     .lean()
     .exec();
 
@@ -181,34 +182,35 @@ async incrementShareCount(postId: string): Promise<{ sharesCount: number }> {
     { new: true },
   );
 
-  if (!updated) {
+  if (!updated) {   
     throw new Error('Post not found');
   }
 
   return { sharesCount: updated.sharesCount };
 }
+
+
 async findOneWithRelated(idOrSlug: string) {
   let post;
 
-  // Check if the input is a valid ObjectId
+  // Find the main post
   if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
-    post = await this.postModel.findById(idOrSlug);
+    post = await this.postModel.findById(idOrSlug).lean();
   } else {
-    post = await this.postModel.findOne({ slug: idOrSlug }).exec();
+    post = await this.postModel.findOne({ slug: idOrSlug }).lean();
   }
 
   if (!post) throw new NotFoundException('Post not found');
 
-  // Find related posts (same category or overlapping keywords)
+  // RELATED POSTS: ONLY SAME CATEGORY — SUPER FAST
   const related = await this.postModel
     .find({
       _id: { $ne: post._id },
-      $or: [
-        { category: post.category },
-        { keywords: { $in: post.keywords } },
-      ],
+      category: post.category, // ← ONLY category match
     })
-    .limit(4)
+    .select('title slug image views category createdAt') // only what you need
+    .sort({ views: -1, createdAt: -1 }) // most popular first
+    .limit(6)
     .lean()
     .exec();
 
@@ -227,6 +229,38 @@ async findBySlug(slug: string) {
   post.views = (post.views || 0) + 1;
   await post.save();
   return post;
+}
+
+
+
+/** ✅ Get Trending Posts (Top by Views) */
+async getTrending(limit = 5) {
+  return this.postModel
+    .find()
+    .sort({ views: -1 })   // highest views first
+    .limit(limit)
+    .select("title image views") // lightweight
+    .lean()
+    .exec();
+}
+
+
+/** ✅ Search Posts */
+async searchPosts(query: string) {
+  if (!query || query.trim() === "") return [];
+
+  return this.postModel
+    .find({
+      $or: [
+        { title: { $regex: query, $options: "i" } },
+        { description: { $regex: query, $options: "i" } },
+        { keywords: { $regex: query, $options: "i" } },
+      ],
+    })
+    .select("title slug image category createdAt views") // lightweight
+    .limit(10)
+    .lean()
+    .exec();
 }
 
 

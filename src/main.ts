@@ -6,6 +6,7 @@ import * as bodyParser from 'body-parser';
 import compression = require('compression'); 
 
 
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

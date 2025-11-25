@@ -35,6 +35,16 @@ export class PostsController {
   ) {
     return this.postsService.findAll(page, limit);
   }
+  
+  @Get("search")
+  async search(@Query("q") q: string) {
+    return this.postsService.searchPosts(q);
+  }
+  
+  @Get("trending")
+  async trending() {
+    return this.postsService.getTrending();
+  }
 
   /**
    * ❗ GET full post by ID (includes content + comments)
@@ -116,4 +126,10 @@ export class PostsController {
     if (!post) throw new NotFoundException('Post not found');
     return post;
   }
+
+
+
+
+
 }
+   
