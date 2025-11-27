@@ -41,11 +41,9 @@ export class AdminService {
 
     if (!admin) throw new UnauthorizedException('Invalid ADMIN');
 
-    console.log('RAW PASSWORD FROM DTO:', password);
-    console.log('HASHED PASSWORD IN DB:', admin.password);
 
     const isMatch = await this.comparePassword(password, admin.password);
-    console.log('PASSWORD MATCH:', isMatch);
+
 
     if (!isMatch) throw new UnauthorizedException('Invalid credentials');
 

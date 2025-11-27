@@ -239,7 +239,7 @@ async getTrending(limit = 5) {
     .find()
     .sort({ views: -1 })   // highest views first
     .limit(limit)
-    .select("title image views") // lightweight
+    .select("title image views content slug") // lightweight
     .lean()
     .exec();
 }
