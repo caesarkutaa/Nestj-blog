@@ -16,11 +16,12 @@ export class PostsService {
   ) {}
    
   /** ✅ Create Post with Cloudinary image & admin name */
-  async create(
+async create(
   createDto: CreatePostDto,
   file?: Express.Multer.File,           // Featured image (optional)
   contentFiles?: Express.Multer.File[], // Additional content images (optional)
-  adminName?: string                     // Admin name (optional)
+  adminName?: string,                   // Admin name (optional)
+  adminId?: string                      // ✅ Just add this parameter
 ) {
   let imageUrl: string | null = null;
 
@@ -50,12 +51,12 @@ export class PostsService {
     image: imageUrl,          // Featured image
     contentImages: contentImageUrls, // Array of content images
     author: adminName,
+    postedBy: adminId,        // ✅ Just add this line
     slug,
   });
 
   return created.save();
 }
-
 
   /** ✅ Update Post (and replace image if new one is uploaded) */
   /** ✅ Update Post (and replace images if new ones are uploaded) */

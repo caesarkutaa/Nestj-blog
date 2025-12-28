@@ -5,10 +5,20 @@ import type { Express } from 'express';
 
 @Injectable()
 export class CloudinaryService {
-  async uploadImage(file: Express.Multer.File): Promise<UploadApiResponse> {
+  // ✅ Original method with default folder
+  async uploadImage(
+    file: Express.Multer.File,
+    folder: string = 'blog_posts', // ✅ Add folder parameter with default
+  ): Promise<UploadApiResponse> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'blog_posts' },
+        { 
+          folder: folder, // ✅ Use the folder parameter
+          transformation: [
+            { width: 500, height: 500, crop: 'fill' },
+            { quality: 'auto' },
+          ],
+        },
         (error, result) => {
           if (error) return reject(error);
           if (!result) return reject(new Error('Upload failed'));
@@ -18,5 +28,16 @@ export class CloudinaryService {
 
       streamifier.createReadStream(file.buffer).pipe(uploadStream);
     });
+  }
+
+  // ✅ Add delete method
+  async deleteImage(publicId: string): Promise<void> {
+    try {
+      const result = await cloudinary.uploader.destroy(publicId);
+      console.log('🗑️ Cloudinary delete result:', result);
+    } catch (error) {
+      console.error('❌ Error deleting image from Cloudinary:', error);
+      throw error;
+    }
   }
 }
