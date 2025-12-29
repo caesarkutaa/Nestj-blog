@@ -11,9 +11,8 @@ export class JobService {
   constructor(
     @InjectModel(Job.name)
     private jobModel: Model<Job>,
-      private applicationService: ApplicationService,
+    private applicationService: ApplicationService,
   ) {}
-
 
   // ✅ Helper function to generate slug from TITLE ONLY
   private generateSlug(title: string): string {
@@ -62,11 +61,24 @@ export class JobService {
     return populatedJob;
   }
   
-  async findAll(filters?: {
-    status?: JobStatus;
-    type?: string;
-    location?: string;
-  }): Promise<Job[]> {
+  // ✅ Updated findAll with pagination
+  async findAll(
+    filters?: {
+      status?: JobStatus;
+      type?: string;
+      location?: string;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    data: Job[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
     const query: any = {};
 
     if (filters?.status) {
@@ -81,18 +93,41 @@ export class JobService {
       query.location = { $regex: filters.location, $options: 'i' };
     }
 
-    return await this.jobModel
-      .find(query)
-      .populate('postedBy', '-password')
-      .populate({
-        path: 'reviews',
-        populate: {
-          path: 'user',
-          select: 'firstName lastName profileImage',
-        },
-      })
-      .sort({ createdAt: -1 })
-      .exec();
+    // ✅ Pagination with safety checks
+    const page = Math.max(1, filters?.page || 1);
+    const limit = Math.max(1, Math.min(100, filters?.limit || 10));
+    const skip = (page - 1) * limit;
+
+    console.log(`📄 Pagination: page=${page}, limit=${limit}, skip=${skip}`);
+
+    // ✅ Execute query with pagination and get total count
+    const [jobs, total] = await Promise.all([
+      this.jobModel
+        .find(query)
+        .populate('postedBy', '-password')
+        .populate({
+          path: 'reviews',
+          populate: {
+            path: 'user',
+            select: 'firstName lastName profileImage',
+          },
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.jobModel.countDocuments(query).exec(),
+    ]);
+
+    return {
+      data: jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOne(id: string): Promise<Job> {
@@ -207,7 +242,7 @@ export class JobService {
     return updatedJob;
   }
 
-   async remove(id: string, user: any): Promise<{ 
+  async remove(id: string, user: any): Promise<{ 
     message: string; 
     deletedApplications: number 
   }> {

@@ -8,7 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
-  Request
+  Request,
 } from '@nestjs/common';
 import { JobService } from './job.service';
 import { CreateJobDto, UpdateJobDto } from './dto/job.dto';
@@ -41,15 +41,28 @@ export class JobController {
   }
 
   @Public()
-  @Get()
-  async findAll(
-    @Query('status') status?: JobStatus,
-    @Query('type') type?: string,
-    @Query('location') location?: string,
-  ) {
-    return await this.jobsService.findAll({ status, type, location });
-  }
+@Get()
+async findAll(
+  @Query('status') status?: JobStatus,
+  @Query('type') type?: string,
+  @Query('location') location?: string,
+  @Query('page') page?: number,  // ✅ Type as number
+  @Query('limit') limit?: number, // ✅ Type as number
+) {
+  // ✅ Validate and set defaults
+  const parsedPage = Math.max(1, page || 1);
+  const parsedLimit = Math.max(1, Math.min(100, limit || 10));
 
+  console.log('📄 Parsed pagination: page=', parsedPage, 'limit=', parsedLimit);
+
+  return await this.jobsService.findAll({ 
+    status, 
+    type, 
+    location,
+    page: parsedPage,
+    limit: parsedLimit,
+  });
+}
   @Get('user/my-jobs')
   async findUserJobs(@Request() req: any) {
     console.log('👤 Full request user object:', JSON.stringify(req.user, null, 2));
@@ -67,8 +80,7 @@ export class JobController {
     return jobs;
   }
 
-
-   @Public()
+  @Public()
   @Get('slug/:slug')
   async findBySlug(@Param('slug') slug: string) {
     return await this.jobsService.findBySlug(slug);

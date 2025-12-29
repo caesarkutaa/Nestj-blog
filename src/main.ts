@@ -35,8 +35,15 @@ async function bootstrap() {
   });
      
   // Global validation
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true })
+ app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
   );
 
   const PORT = process.env.PORT || 5000;
