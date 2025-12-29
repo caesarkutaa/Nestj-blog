@@ -38,15 +38,17 @@ export class CreatePostDto {
   @IsString()
   metaDescription?: string;
 
-  @IsArray()
-  @IsString({ each: true })
+   @IsOptional()
   @Transform(({ value }) => {
-    // Convert JSON string to array
-    try {
-      return typeof value === 'string' ? JSON.parse(value) : value;
-    } catch {
+    // Handle comma-separated string
+    if (typeof value === 'string') {
+      return value.split(',').map(k => k.trim()).filter(Boolean);
+    }
+    // Handle array
+    if (Array.isArray(value)) {
       return value;
     }
+    return [];
   })
-  keywords: string[];
+  keywords?: string[];        
 }

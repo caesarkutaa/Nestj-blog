@@ -55,27 +55,29 @@ export class PostsController {
   }
 
   /** CREATE POST */
-  @UseGuards(JwtAuthGuard)
-  @HttpPost()
-  @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'image', maxCount: 1 },
-      { name: 'contentImages', maxCount: 10 },
-    ]),
-  )
-  async create(
-    @UploadedFiles()
-    files: { image?: Express.Multer.File[]; contentImages?: Express.Multer.File[] },
-    @Body(new ValidationPipe({ transform: true }))
-    createDto: CreatePostDto,
-    @Request() req,
-  ) {
-    const adminName = req.user?.username;
-    const featuredImage = files.image?.[0];
-    const contentFiles = files.contentImages || [];
-    return this.postsService.create(createDto, featuredImage, contentFiles, adminName);
-  }
-
+@UseGuards(JwtAuthGuard)
+@HttpPost()
+@UseInterceptors(
+  FileFieldsInterceptor([
+    { name: 'image', maxCount: 1 },
+    { name: 'contentImages', maxCount: 10 },
+  ]),
+)
+async create(
+  @UploadedFiles()
+  files: { image?: Express.Multer.File[]; contentImages?: Express.Multer.File[] },
+  @Body(new ValidationPipe({ transform: true }))
+  createDto: CreatePostDto,
+  @Request() req,
+) {
+  const adminName = req.user?.username;
+  const adminId = req.user?.userId; // ✅ Just add this line
+  const featuredImage = files?.image?.[0];
+  const contentFiles = files?.contentImages || [];
+  
+  // ✅ Pass adminId as 5th parameter
+  return this.postsService.create(createDto, featuredImage, contentFiles, adminName, adminId);
+}
   /** UPDATE POST */
   @UseGuards(JwtAuthGuard)
   @Put(':id')

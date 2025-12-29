@@ -31,6 +31,10 @@ views: number;
   @Prop({ index: true })
   author: string;
 
+   // ✅ ADD THIS FIELD - References the Admin who created the post
+  @Prop({ type: Types.ObjectId, ref: 'Admin', index: true })
+  postedBy?: Types.ObjectId;
+
   // SEO fields
   @Prop()
   metaTitle?: string;    

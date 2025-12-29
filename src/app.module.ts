@@ -6,6 +6,11 @@ import { PostsModule } from './posts/posts.module';
 import { CommentsModule } from './comments/comments.module';
 import { LikesModule } from './likes/likes.module';
 import { CacheService } from './shared/cache.service';
+import { UserModule } from './user/user.module';
+import { JobModule } from './job/job.module';
+import { ApplicationModule } from './application/application.module';
+import { ReviewsModule } from './reviews/reviews.module';
+import { EmailModule } from './email/email.module';
 
 
 @Module({
@@ -22,9 +27,15 @@ import { CacheService } from './shared/cache.service';
     AdminModule,
     PostsModule,
     CommentsModule,
-    LikesModule,        
+    LikesModule,
+    UserModule,
+    JobModule,
+    ApplicationModule,
+    ReviewsModule,
+    EmailModule,        
   ],
    providers: [CacheService],
    exports: [CacheService],
+
 })
 export class AppModule {}
