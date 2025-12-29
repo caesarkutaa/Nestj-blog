@@ -30,8 +30,8 @@ async function bootstrap() {
     // ✅ Enable CORS with credentials support
     app.enableCors({
       origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-        'http://localhost:3000',
-        'http://localhost:3001',
+        'https://www.krevv.com',
+        'https://krevv.vercel.app',
       ],
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
