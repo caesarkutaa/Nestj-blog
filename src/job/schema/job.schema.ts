@@ -83,4 +83,3 @@ JobSchema.set('toObject', { virtuals: true });
 // Create indexes for better query performance
 JobSchema.index({ status: 1, type: 1, location: 1 });
 JobSchema.index({ postedBy: 1 });
-JobSchema.index({ slug: 1 }); // ✅ ADD INDEX FOR SLUG

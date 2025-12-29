@@ -12,18 +12,56 @@ import { ApplicationModule } from './application/application.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { EmailModule } from './email/email.module';
 
-
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // ✅ Global configuration
+    ConfigModule.forRoot({ 
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+
+    // ✅ MongoDB with better error handling
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGO_URI') || '',
-        dbName: 'blogdb',
-      }),
-    }),    
+      useFactory: async (configService: ConfigService) => {
+        const uri = configService.get<string>('MONGO_URI');
+
+        if (!uri) {
+          throw new Error('❌ MONGO_URI is not defined in environment variables');
+        }
+
+        console.log('🔌 Attempting to connect to MongoDB...');
+        console.log(`📍 Database: ${uri.includes('@') ? uri.split('@')[1] : 'localhost'}`);
+
+        return {
+          uri,
+          dbName: 'blogdb',
+          retryAttempts: 5,
+          retryDelay: 3000,
+          connectionFactory: (connection) => {
+            connection.on('connected', () => {
+              console.log('✅ MongoDB connected successfully');
+            });
+
+            connection.on('error', (error) => {
+              console.error('❌ MongoDB connection error:', error.message);
+            });
+
+            connection.on('disconnected', () => {
+              console.log('⚠️  MongoDB disconnected');
+            });
+
+            connection.on('reconnected', () => {
+              console.log('🔄 MongoDB reconnected');
+            });
+
+            return connection;
+          },
+        };
+      },
+    }),
+
     AdminModule,
     PostsModule,
     CommentsModule,
@@ -32,10 +70,9 @@ import { EmailModule } from './email/email.module';
     JobModule,
     ApplicationModule,
     ReviewsModule,
-    EmailModule,        
+    EmailModule,
   ],
-   providers: [CacheService],
-   exports: [CacheService],
-
+  providers: [CacheService],
+  exports: [CacheService],
 })
 export class AppModule {}
