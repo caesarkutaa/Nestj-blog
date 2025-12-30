@@ -22,7 +22,7 @@ export class Post {
   contentImages?: string[];
 
   @Prop({ type: Number, default: 0, index: true })
-views: number;
+  views: number;
 
 
   @Prop({ index: true })

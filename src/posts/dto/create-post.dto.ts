@@ -19,8 +19,6 @@ export class CreatePostDto {
   @IsNotEmpty()
   content: string;     
 
-  views?: number;
-
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

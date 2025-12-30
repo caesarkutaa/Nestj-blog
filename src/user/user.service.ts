@@ -1,3 +1,4 @@
+// src/user/user.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -12,6 +13,8 @@ export class UserService {
   ) {}
 
   async findOne(id: string): Promise<User> {
+    console.log('🔍 Finding user by ID:', id);
+    
     const user = await this.userModel
       .findById(id)
       .select('-password')
@@ -20,22 +23,29 @@ export class UserService {
       .exec();
 
     if (!user) {
+      console.error('❌ User not found with ID:', id);
       throw new NotFoundException('User not found');
     }
 
+    console.log('✅ User found:', user.email);
     return user;
   }
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
+    console.log('📝 Updating user ID:', id);
+    console.log('📝 Update data:', updateUserDto);
+    
     const user = await this.userModel
       .findByIdAndUpdate(id, updateUserDto, { new: true })
       .select('-password')
       .exec();
 
     if (!user) {
+      console.error('❌ User not found for update with ID:', id);
       throw new NotFoundException('User not found');
     }
 
+    console.log('✅ User updated:', user.email);
     return user;
   }
 }

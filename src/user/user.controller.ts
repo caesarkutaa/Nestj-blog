@@ -1,3 +1,4 @@
+// src/user/user.controller.ts
 import {
   Controller,
   Get,
@@ -19,6 +20,9 @@ export class UserController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getProfile(@CurrentUser() user: any) {
+    console.log('✅ GET /users/me - User from JWT:', user);
+    
+    // ✅ Return the user object directly (already populated from JWT strategy)
     return user;
   }
 
@@ -28,7 +32,19 @@ export class UserController {
     @Body() updateUserDto: UpdateUserDto,
     @CurrentUser() user: any,
   ) {
-    return await this.usersService.update(user._id?.toString() || user.id, updateUserDto);
+    console.log('✅ PATCH /users/me - User from JWT:', user);
+    console.log('✅ PATCH /users/me - Update data:', updateUserDto);
+    
+    // ✅ Try all possible ID fields
+    const userId = user._id?.toString() || user.id || user.userId || user.sub;
+    
+    console.log('✅ Extracted user ID:', userId);
+    
+    if (!userId) {
+      throw new Error('User ID not found in token');
+    }
+    
+    return await this.usersService.update(userId, updateUserDto);
   }
 
   @Public()

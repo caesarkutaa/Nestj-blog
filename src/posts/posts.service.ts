@@ -51,7 +51,8 @@ async create(
     image: imageUrl,          // Featured image
     contentImages: contentImageUrls, // Array of content images
     author: adminName,
-    postedBy: adminId,        // ✅ Just add this line
+    postedBy: adminId, 
+    views: 0,       // ✅ Just add this line
     slug,
   });
 
