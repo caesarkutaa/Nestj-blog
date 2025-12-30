@@ -105,7 +105,7 @@ async findAll(page = 1, limit = 10) {
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .select('title slug image likes createdAt category views author')
+    .select('title slug image likes content createdAt category views author')
     .populate('comments') // lightweight
     .lean()
     .exec();

@@ -32,6 +32,7 @@ async function bootstrap() {
       origin: process.env.ALLOWED_ORIGINS?.split(',') || [
         'https://www.krevv.com',
         'https://krevv.vercel.app',
+       'https://cautious-eureka-9gp9qvgv756fpjgr-3000.app.github.dev',
       ],
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

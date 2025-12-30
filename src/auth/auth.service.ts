@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 import { User } from '../user/schemas/user.schema';
 import { Admin } from '../admin/schemas/admin.schema';
 import { AdminService } from '../admin/admin.service';
-import { EmailService } from '../email/email.service'; // ✅ Import EmailService
+import { EmailService } from '../email/email.service'; 
 import { SignUpDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
 import { jwtConstants } from './constants';
 
@@ -18,7 +18,7 @@ export class AuthService {
     private userModel: Model<User>,
     private adminService: AdminService,
     private jwtService: JwtService,
-    private emailService: EmailService, // ✅ Inject EmailService
+    private emailService: EmailService, 
   ) {}
 
   // ✅ UPDATED: Sign Up with Email Verification
