@@ -34,6 +34,13 @@ export class ReviewsController {
     });
   }
 
+  // Get all reviews (for admin dashboard)
+  @Public()
+  @Get()
+  async findAll() {
+    return await this.reviewsService.findAll();
+  }
+
   @Public()
   @Get('job/:jobId')
   async findJobReviews(@Param('jobId') jobId: string) {

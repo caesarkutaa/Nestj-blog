@@ -15,55 +15,65 @@ export class ReviewsService {
     private jobModel: Model<Job>,
   ) {}
 
- async create(createReviewDto: CreateReviewDto, user: any): Promise<any> {
-  const { jobId, ...reviewData } = createReviewDto;
+  async create(createReviewDto: CreateReviewDto, user: any): Promise<any> {
+    const { jobId, ...reviewData } = createReviewDto;
 
-  // Check if user is blocked
-  if (user.isBlocked) {
-    throw new ForbiddenException(
-      `Your account has been blocked. Reason: ${user.blockReason || 'No reason provided'}`,
-    );
+    // Check if user is blocked
+    if (user.isBlocked) {
+      throw new ForbiddenException(
+        `Your account has been blocked. Reason: ${user.blockReason || 'No reason provided'}`,
+      );
+    }
+
+    // Find the job
+    const job = await this.jobModel.findById(jobId);
+
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    // Convert to ObjectIds
+    const userObjectId = new Types.ObjectId(user._id);
+    const jobObjectId = new Types.ObjectId(jobId);
+
+    // Check if user already reviewed this job
+    const existingReview = await this.reviewModel.findOne({
+      user: userObjectId,
+      job: jobObjectId,
+    });
+
+    if (existingReview) {
+      throw new ConflictException('You have already reviewed this job');
+    }
+
+    // Create username from user's first and last name
+    const username = `${user.firstName} ${user.lastName}`;
+
+    // Create review
+    const review = await this.reviewModel.create({
+      ...reviewData,
+      user: userObjectId,
+      job: jobObjectId,
+      username: username, // Add username
+    });
+
+    const populatedReview = await this.reviewModel
+      .findById(review._id)
+      .populate('user', 'firstName lastName profileImage')
+      .exec();
+
+    return populatedReview;
   }
 
-  // Find the job
-  const job = await this.jobModel.findById(jobId);
-
-  if (!job) {
-    throw new NotFoundException('Job not found');
+  // ✅ NEW: Get all reviews
+  async findAll(): Promise<Review[]> {
+    return await this.reviewModel
+      .find()
+      .populate('user', 'firstName lastName profileImage')
+      .populate('job', 'title company')
+      .sort({ createdAt: -1 })
+      .exec();
   }
-
-  // Convert to ObjectIds
-  const userObjectId = new Types.ObjectId(user._id);
-  const jobObjectId = new Types.ObjectId(jobId);
-
-  // Check if user already reviewed this job
-  const existingReview = await this.reviewModel.findOne({
-    user: userObjectId,
-    job: jobObjectId,
-  });
-
-  if (existingReview) {
-    throw new ConflictException('You have already reviewed this job');
-  }
-
-  // Create username from user's first and last name
-  const username = `${user.firstName} ${user.lastName}`;
-
-  // Create review
-  const review = await this.reviewModel.create({
-    ...reviewData,
-    user: userObjectId,
-    job: jobObjectId,
-    username: username, // Add username
-  });
-
-  const populatedReview = await this.reviewModel
-    .findById(review._id)
-    .populate('user', 'firstName lastName profileImage')
-    .exec();
-
-  return populatedReview;
-}
 
   async findJobReviews(jobId: string): Promise<Review[]> {
     if (!Types.ObjectId.isValid(jobId)) {
