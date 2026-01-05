@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsArray } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsArray, IsNotEmpty } from 'class-validator';
 import { JobType, JobStatus } from '../../job/schema/job.schema';
 
 export class CreateJobDto {
@@ -20,6 +20,33 @@ export class CreateJobDto {
 
   @IsEnum(JobType)
   type: JobType;
+
+  @IsString()
+  @IsOptional()
+  @IsEnum([
+    'Technology',
+    'Healthcare',
+    'Finance',
+    'Education',
+    'Marketing',
+    'Sales',
+    'Design',
+    'Engineering',
+    'Customer Service',
+    'Human Resources',
+    'Operations',
+    'Legal',
+    'Construction',
+    'Hospitality',
+    'Retail',
+    'Transportation',
+    'Manufacturing',
+    'Agriculture',
+    'Real Estate',
+    'Other'
+  ])
+  category?: string;
+
 
   @IsOptional()
   @IsArray()
@@ -65,6 +92,33 @@ export class UpdateJobDto {
   @IsEnum(JobType)
   type?: JobType;
 
+@IsString()
+  @IsOptional()
+  @IsEnum([
+    'Technology',
+    'Healthcare',
+    'Finance',
+    'Education',
+    'Marketing',
+    'Sales',
+    'Design',
+    'Engineering',
+    'Customer Service',
+    'Human Resources',
+    'Operations',
+    'Legal',
+    'Construction',
+    'Hospitality',
+    'Retail',
+    'Transportation',
+    'Manufacturing',
+    'Agriculture',
+    'Real Estate',
+    'Other'
+  ])
+  category?: string;
+
+
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -82,4 +136,16 @@ export class UpdateJobDto {
   @IsOptional()
   @IsEnum(JobStatus)
   status?: JobStatus;
+}
+
+
+export class ReportJobDto {
+  @IsString()
+  @IsNotEmpty()
+  @IsEnum(['spam', 'scam', 'inappropriate', 'duplicate', 'misleading', 'other'])
+  reason: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
 }

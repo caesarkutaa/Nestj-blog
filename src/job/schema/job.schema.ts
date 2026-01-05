@@ -48,6 +48,61 @@ export class Job extends Document {
   @Prop()
   experienceLevel?: string;
 
+   @Prop({ 
+    required: true,
+    enum: [
+      'Technology',
+      'Healthcare',
+      'Finance',
+      'Education',
+      'Marketing',
+      'Sales',
+      'Design',
+      'Engineering',
+      'Customer Service',
+      'Human Resources',
+      'Operations',
+      'Legal',
+      'Construction',
+      'Hospitality',
+      'Retail',
+      'Transportation',
+      'Manufacturing',
+      'Agriculture',
+      'Real Estate',
+      'Other'
+    ],
+    default: 'Other'
+  })
+  category: string;
+
+  @Prop({
+    type: [{
+      userId: { type: Types.ObjectId, ref: 'User' },
+      reason: { 
+        type: String, 
+        enum: ['spam', 'scam', 'inappropriate', 'duplicate', 'misleading', 'other'],
+        required: true 
+      },
+      description: { type: String },
+      reportedAt: { type: Date, default: Date.now },
+      status: { 
+        type: String, 
+        enum: ['pending', 'reviewed', 'resolved', 'dismissed'],
+        default: 'pending'
+      }
+    }],
+    default: []
+  })
+  reports: Array<{
+    userId: Types.ObjectId;
+    reason: string;
+    description?: string;
+    reportedAt: Date;
+    status: string;
+  }>;
+
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   postedBy: Types.ObjectId | User;
 
@@ -81,5 +136,6 @@ JobSchema.set('toJSON', { virtuals: true });
 JobSchema.set('toObject', { virtuals: true });
 
 // Create indexes for better query performance
+
 JobSchema.index({ status: 1, type: 1, location: 1 });
 JobSchema.index({ postedBy: 1 });

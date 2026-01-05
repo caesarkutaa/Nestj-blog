@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Job, JobStatus } from './schema/job.schema';
 import { User, UserRole } from '../user/schemas/user.schema';
-import { CreateJobDto, UpdateJobDto } from '../job/dto/job.dto';
+import { CreateJobDto, UpdateJobDto, ReportJobDto } from '../job/dto/job.dto';
 import { ApplicationService } from '../application/application.service';
 
 @Injectable()
@@ -45,6 +45,7 @@ export class JobService {
       ...createJobDto,
       slug,
       postedBy: userObjectId,
+      reports: [], // ✅ Initialize empty reports array
     });
 
     console.log('✅ Job created:', job._id, 'slug:', job.slug);
@@ -61,12 +62,13 @@ export class JobService {
     return populatedJob;
   }
   
-  // ✅ Updated findAll with pagination
+  // ✅ Updated findAll with pagination and category filter
   async findAll(
     filters?: {
       status?: JobStatus;
       type?: string;
       location?: string;
+      category?: string; // ✅ NEW: Category filter
       page?: number;
       limit?: number;
     }
@@ -93,12 +95,18 @@ export class JobService {
       query.location = { $regex: filters.location, $options: 'i' };
     }
 
+    // ✅ NEW: Category filter
+    if (filters?.category) {
+      query.category = filters.category;
+    }
+
     // ✅ Pagination with safety checks
     const page = Math.max(1, filters?.page || 1);
     const limit = Math.max(1, Math.min(100, filters?.limit || 10));
     const skip = (page - 1) * limit;
 
     console.log(`📄 Pagination: page=${page}, limit=${limit}, skip=${skip}`);
+    console.log(`🔍 Filters:`, filters);
 
     // ✅ Execute query with pagination and get total count
     const [jobs, total] = await Promise.all([
@@ -303,5 +311,222 @@ export class JobService {
       averageRating,
       totalReviews,
     };
+  }
+
+  // ✅ NEW: Get all categories
+  async getCategories(): Promise<string[]> {
+    return [
+      'Technology',
+      'Healthcare',
+      'Finance',
+      'Education',
+      'Marketing',
+      'Sales',
+      'Design',
+      'Engineering',
+      'Customer Service',
+      'Human Resources',
+      'Operations',
+      'Legal',
+      'Construction',
+      'Hospitality',
+      'Retail',
+      'Transportation',
+      'Manufacturing',
+      'Agriculture',
+      'Real Estate',
+      'Other'
+    ];
+  }
+
+  // ✅ NEW: Get jobs by category
+  async findByCategory(
+    category: string, 
+    filters?: {
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    data: Job[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    const page = Math.max(1, filters?.page || 1);
+    const limit = Math.max(1, Math.min(100, filters?.limit || 10));
+    const skip = (page - 1) * limit;
+
+    const query = { category, status: 'active' };
+    
+    const [jobs, total] = await Promise.all([
+      this.jobModel
+        .find(query)
+        .populate('postedBy', '-password')
+        .populate({
+          path: 'reviews',
+          populate: {
+            path: 'user',
+            select: 'firstName lastName profileImage',
+          },
+        })
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 })
+        .exec(),
+      this.jobModel.countDocuments(query).exec(),
+    ]);
+
+    return {
+      data: jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ✅ FIXED: Report a job - Added null check
+  async reportJob(jobId: string, reportJobDto: ReportJobDto, userId: string): Promise<Job> {
+    if (!Types.ObjectId.isValid(jobId)) {
+      throw new NotFoundException('Invalid job ID');
+    }
+
+    const job = await this.jobModel.findById(jobId);
+
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    // Check if user already reported this job
+    const alreadyReported = job.reports?.some(
+      (report) => report.userId.toString() === userId
+    );
+
+    if (alreadyReported) {
+      throw new BadRequestException('You have already reported this job');
+    }
+
+    // Add report to job
+    const report = {
+      userId: new Types.ObjectId(userId),
+      reason: reportJobDto.reason,
+      description: reportJobDto.description,
+      reportedAt: new Date(),
+      status: 'pending' as const,
+    };
+
+    job.reports = job.reports || [];
+    job.reports.push(report);
+
+    await job.save();
+
+    console.log(`✅ Job ${jobId} reported by user ${userId}. Reason: ${reportJobDto.reason}`);
+
+    // ✅ FIXED: Added null check
+    const updatedJob = await this.jobModel
+      .findById(jobId)
+      .populate('postedBy', '-password')
+      .exec();
+
+    if (!updatedJob) {
+      throw new NotFoundException('Job not found after update');
+    }
+
+    return updatedJob;
+  }
+
+  // ✅ FIXED: Get all reports - Fixed type issues
+  async getAllReports(): Promise<any[]> {
+    const jobs = await this.jobModel
+      .find({ 'reports.0': { $exists: true } }) // Jobs with at least 1 report
+      .populate('postedBy', '-password')
+      .populate('reports.userId', 'firstName lastName email')
+      .sort({ 'reports.reportedAt': -1 })
+      .exec();
+
+    // ✅ FIXED: Properly typed allReports array
+    const allReports: any[] = [];
+    jobs.forEach((job) => {
+      job.reports.forEach((report: any) => {
+        allReports.push({
+          _id: report._id || new Types.ObjectId(),
+          jobId: job._id,
+          jobTitle: job.title,
+          jobCompany: job.company,
+          jobSlug: job.slug,
+          jobCategory: job.category,
+          postedBy: job.postedBy,
+          reportedBy: report.userId,
+          reason: report.reason,
+          description: report.description,
+          reportedAt: report.reportedAt,
+          status: report.status,
+        });
+      });
+    });
+
+    console.log(`📊 Total reports found: ${allReports.length}`);
+    return allReports;
+  }
+
+  // ✅ FIXED: Update report status - Added null check
+  async updateReportStatus(
+    jobId: string,
+    reportId: string,
+    status: 'pending' | 'reviewed' | 'resolved' | 'dismissed'
+  ): Promise<Job> {
+    const job = await this.jobModel.findById(jobId);
+
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    const report = job.reports.find((r: any) => r._id?.toString() === reportId);
+
+    if (!report) {
+      throw new NotFoundException('Report not found');
+    }
+
+    report.status = status;
+    await job.save();
+
+    console.log(`✅ Report ${reportId} status updated to: ${status}`);
+
+    // ✅ FIXED: Added null check
+    const updatedJob = await this.jobModel
+      .findById(jobId)
+      .populate('postedBy', '-password')
+      .populate('reports.userId', 'firstName lastName email')
+      .exec();
+
+    if (!updatedJob) {
+      throw new NotFoundException('Job not found after update');
+    }
+
+    return updatedJob;
+  }
+
+  // ✅ NEW: Get category statistics
+  async getCategoryStats(): Promise<any[]> {
+    const stats = await this.jobModel.aggregate([
+      { $match: { status: 'active' } },
+      {
+        $group: {
+          _id: '$category',
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+    ]);
+
+    return stats.map((stat) => ({
+      category: stat._id,
+      count: stat.count,
+    }));
   }
 }
