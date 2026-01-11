@@ -5,14 +5,14 @@ import {
   Get,
   Param,
   Post as HttpPost,
-  Put,
   UseGuards,
   ValidationPipe,
   UploadedFiles,
   UseInterceptors,
   Request,
   NotFoundException,
-  Query
+  Query,
+  Patch
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../shared/jwt-auth.guard';
@@ -55,37 +55,57 @@ export class PostsController {
   }
 
   /** CREATE POST */
-@UseGuards(JwtAuthGuard)
-@HttpPost()
-@UseInterceptors(
-  FileFieldsInterceptor([
-    { name: 'image', maxCount: 1 },
-    { name: 'contentImages', maxCount: 10 },
-  ]),
-)
-async create(
-  @UploadedFiles()
-  files: { image?: Express.Multer.File[]; contentImages?: Express.Multer.File[] },
-  @Body(new ValidationPipe({ transform: true }))
-  createDto: CreatePostDto,
-  @Request() req,
-) {
-  const adminName = req.user?.username;
-  const adminId = req.user?.userId; // ✅ Just add this line
-  const featuredImage = files?.image?.[0];
-  const contentFiles = files?.contentImages || [];
-  
-  // ✅ Pass adminId as 5th parameter
-  return this.postsService.create(createDto, featuredImage, contentFiles, adminName, adminId);
-}
+  @UseGuards(JwtAuthGuard)
+  @HttpPost()
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'image', maxCount: 1 },
+        { name: 'contentImages', maxCount: 10 },
+      ],
+      {
+        limits: {
+          fileSize: 50 * 1024 * 1024,   // 50MB per file
+          fieldSize: 50 * 1024 * 1024,  // 50MB for text fields
+          fields: 100,
+          files: 10,
+        },
+      }
+    )
+  )
+  async create(
+    @UploadedFiles()
+    files: { image?: Express.Multer.File[]; contentImages?: Express.Multer.File[] },
+    @Body(new ValidationPipe({ transform: true }))
+    createDto: CreatePostDto,
+    @Request() req,
+  ) {
+    const adminName = req.user?.username;
+    const adminId = req.user?.userId;
+    const featuredImage = files?.image?.[0];
+    const contentFiles = files?.contentImages || [];
+    
+    return this.postsService.create(createDto, featuredImage, contentFiles, adminName, adminId);
+  }
+
   /** UPDATE POST */
   @UseGuards(JwtAuthGuard)
-  @Put(':id')
+  @Patch(':id')
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'image', maxCount: 1 },
-      { name: 'contentImages', maxCount: 10 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'image', maxCount: 1 },
+        { name: 'contentImages', maxCount: 10 },
+      ],
+      {
+        limits: {
+          fileSize: 50 * 1024 * 1024,   // 50MB per file
+          fieldSize: 50 * 1024 * 1024,  // 50MB for text fields
+          fields: 100,
+          files: 10,
+        },
+      }
+    )
   )
   async update(
     @Param('id') id: string,
@@ -98,6 +118,18 @@ async create(
   ) {
     const featuredImage = files?.image?.[0];
     const contentFiles = files?.contentImages || [];
+
+    // ✅ Log content size
+    const contentSize = dto.content 
+      ? (dto.content.length / 1024).toFixed(2) 
+      : 0;
+    
+    const totalBodySize = (JSON.stringify(dto).length / 1024).toFixed(2);
+    
+    console.log(`\n📊 UPDATE POST SIZE:`);
+    console.log(`   Content: ${contentSize} KB`);
+    console.log(`   Total Body: ${totalBodySize} KB`);
+    
     return this.postsService.update(id, dto, featuredImage, contentFiles);
   }
 
@@ -128,10 +160,4 @@ async create(
     if (!post) throw new NotFoundException('Post not found');
     return post;
   }
-
-
-
-
-
 }
-   

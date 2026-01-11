@@ -3,10 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config'; // ✅ Add this
+import { ConfigService } from '@nestjs/config';
 import { Admin, AdminDocument } from './schemas/admin.schema';
-// ❌ Remove this line:
-// import { jwtConstants } from 'src/auth/constants';
 import { User } from 'src/user/schemas/user.schema';
 import { Job } from 'src/job/schema/job.schema';
 import { UpdateAdminProfileDto, ChangeAdminPasswordDto } from './dto/update-admin-profile.dto';
@@ -19,7 +17,7 @@ export class AdminService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Job.name) private jobModel: Model<Job>,
     private jwtService: JwtService,
-    private configService: ConfigService, // ✅ Add this
+    private configService: ConfigService,
     private cloudinaryService: CloudinaryService,
   ) {}
 
@@ -45,12 +43,10 @@ export class AdminService {
 
   async comparePassword(plain: string, hash: string): Promise<boolean> {
     const result = await bcrypt.compare(plain, hash);
-   
     return result;
   }
 
   async login(dto: { username: string; password: string }) {
-   
     const { username, password } = dto;
     const admin = await this.findByUsername(username);
 
@@ -66,22 +62,17 @@ export class AdminService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // ✅ Get the SAME secret that JWT strategy uses
     const secret = this.configService.get<string>('JWT_SECRET') || 'supersecretkey';
-    
-    const adminId = admin._id?.toString() || String(admin._id); // ✅ Safe conversion
+    const adminId = admin._id?.toString() || String(admin._id);
 
-const payload = { 
-  username: admin.username, 
-  sub: adminId,
-  isAdmin: true,
-  firstName: admin.firstName || null,
-  lastName: admin.lastName || null,
-};
+    const payload = { 
+      username: admin.username, 
+      sub: adminId,
+      isAdmin: true,
+      firstName: admin.firstName || null,
+      lastName: admin.lastName || null,
+    };
     
-   
-    
-    // ✅ Use ConfigService secret (NOT jwtConstants.secret)
     const token = this.jwtService.sign(payload, { secret });
     
     console.log('✅ Admin token generated successfully');
@@ -116,7 +107,6 @@ const payload = {
       throw new NotFoundException('Admin not found');
     }
 
-    // Update fields
     if (updateProfileDto.firstName !== undefined) admin.firstName = updateProfileDto.firstName;
     if (updateProfileDto.lastName !== undefined) admin.lastName = updateProfileDto.lastName;
     if (updateProfileDto.email !== undefined) admin.email = updateProfileDto.email;
@@ -125,7 +115,6 @@ const payload = {
 
     await admin.save();
 
-    // Return without password
     return await this.findById(adminId);
   }
 
@@ -140,12 +129,10 @@ const payload = {
       throw new NotFoundException('Admin not found');
     }
 
-    // Delete old image if exists
     if (admin.profileImagePublicId) {
       await this.cloudinaryService.deleteImage(admin.profileImagePublicId);
     }
 
-    // Upload new image
     const uploadResult = await this.cloudinaryService.uploadImage(
       file,
       'admin-profiles',
@@ -188,7 +175,6 @@ const payload = {
       throw new NotFoundException('Admin not found');
     }
 
-    // Verify current password
     const isMatch = await this.comparePassword(
       changePasswordDto.currentPassword,
       admin.password,
@@ -198,7 +184,6 @@ const payload = {
       throw new BadRequestException('Current password is incorrect');
     }
 
-    // Update password (will be hashed by pre-save hook)
     admin.password = changePasswordDto.newPassword;
     await admin.save();
 
@@ -231,7 +216,7 @@ const payload = {
       .exec();
   }
 
-  // Block user functionality
+  // ✅ Block User
   async blockUser(userId: string, adminUsername: string, reason?: string): Promise<any> {
     const user = await this.userModel.findById(userId);
     
@@ -251,6 +236,7 @@ const payload = {
     return userWithoutPassword;
   }
 
+  // ✅ Unblock User
   async unblockUser(userId: string): Promise<any> {
     const user = await this.userModel.findById(userId);
     
@@ -270,6 +256,7 @@ const payload = {
     return userWithoutPassword;
   }
 
+  // ✅ Get Blocked Users
   async getBlockedUsers(): Promise<User[]> {
     return await this.userModel
       .find({ isBlocked: true })
@@ -277,11 +264,42 @@ const payload = {
       .exec();
   }
 
+  // ✅ Get All Users
   async getAllUsers(): Promise<User[]> {
     return await this.userModel
       .find()
       .select('-password')
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1  })
       .exec();
   }
+
+ // ✅ FIXED: Delete User (Admin power)
+async deleteUser(
+  adminId: string, 
+  userId: string
+): Promise<{ message: string; deletedJobs: number }> {  // ✅ Fixed return type
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) {
+    throw new NotFoundException('Admin not found');
+  }
+
+  const user = await this.userModel.findById(userId);
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+
+  // ✅ Delete all jobs posted by this user
+  const deletedJobs = await this.jobModel.deleteMany({ postedBy: userId });
+  console.log(`✅ Deleted ${deletedJobs.deletedCount} jobs posted by user ${userId}`);
+
+  // ✅ Delete the user
+  await this.userModel.findByIdAndDelete(userId);
+
+  console.log(`✅ User ${userId} deleted successfully by admin ${admin.username}`);
+
+  return { 
+    message: 'User deleted successfully',
+    deletedJobs: deletedJobs.deletedCount,
+  };
+}
 }

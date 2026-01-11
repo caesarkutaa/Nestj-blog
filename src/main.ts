@@ -2,10 +2,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import * as bodyParser from 'body-parser';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import * as dotenv from 'dotenv';
+import * as express from 'express';
 
 // ✅ Load environment variables FIRST
 dotenv.config();
@@ -15,17 +15,17 @@ async function bootstrap() {
     const app = await NestFactory.create(AppModule, {
       logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     });
+    
+    // ✅✅✅ FIXED: Use express.json instead of bodyParser ✅✅✅
+    app.use(express.json({ limit: '50mb' }));
+    app.use(express.urlencoded({ limit: '50mb', extended: true }));
+    app.use(compression());
 
     // ✅ Add cookie parser BEFORE other middleware
     app.use(cookieParser());
 
     // ✅ Security headers
     app.use(helmet());
-
-    // ✅ Body parser with limits
-    app.use(bodyParser.json({ limit: '20mb' }));
-    app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
-    app.use(compression());
 
     // ✅ Enable CORS with credentials support
     app.enableCors({
@@ -60,6 +60,7 @@ async function bootstrap() {
     console.log('========================================');
     console.log(`🚀 Server successfully started`);
     console.log(`📡 Port: ${PORT}`);
+    console.log(`📝 Body parser limit: 50MB`); // ✅ Added confirmation
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🗄️  Database: ${process.env.MONGO_URI ? '✅ Configured' : '❌ Missing'}`);
     console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? '✅ Set' : '❌ Missing'}`);

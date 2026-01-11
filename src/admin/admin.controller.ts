@@ -156,4 +156,19 @@ async getPublicProfile(@Param('id') id: string) {
   async unblockUser(@Param('userId') userId: string) {
     return await this.adminService.unblockUser(userId);
   }
+
+  
+  // ✅ FIXED: Delete User Endpoint with proper adminId extraction
+@Delete('users/:userId')  // ✅ Remove '/delete' to match frontend
+@UseGuards(JwtAuthGuard, AdminGuard)
+async deleteUser(
+  @Param('userId') userId: string,
+  @Request() req,  // ✅ Add Request decorator to access JWT payload
+) {
+  const adminId = req.user.sub || req.user.userId;  // ✅ Extract adminId from JWT
+  console.log('🔑 Admin ID:', adminId);
+  console.log('🗑️ Deleting user ID:', userId);
+  
+  return await this.adminService.deleteUser(adminId, userId);
+}
 }
