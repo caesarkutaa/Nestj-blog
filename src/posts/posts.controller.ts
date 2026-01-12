@@ -4,7 +4,7 @@ import {
   Delete,
   Get,
   Param,
-  Post as HttpPost,
+  Post,
   UseGuards,
   ValidationPipe,
   UploadedFiles,
@@ -56,7 +56,7 @@ export class PostsController {
 
   /** CREATE POST */
   @UseGuards(JwtAuthGuard)
-  @HttpPost()
+  @Post()
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -142,7 +142,7 @@ export class PostsController {
 
   /** SHARE COUNT */
   @UseGuards(JwtAuthGuard)
-  @HttpPost(':id/share')
+  @Post(':id/share')
   async sharePost(@Param('id') id: string) {
     return this.postsService.incrementShareCount(id);
   }
