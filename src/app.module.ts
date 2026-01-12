@@ -11,6 +11,10 @@ import { JobModule } from './job/job.module';
 import { ApplicationModule } from './application/application.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { EmailModule } from './email/email.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { JobaggregatorService } from './jobaggregator/jobaggregator.service';
+import { JobaggregatorController } from './jobaggregator/jobaggregator.controller';
+import { JobaggregatorModule } from './jobaggregator/jobaggregator.module';
 
 @Module({
   imports: [
@@ -19,6 +23,7 @@ import { EmailModule } from './email/email.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+     ScheduleModule.forRoot(),
 
     // ✅ MongoDB with better error handling
     MongooseModule.forRootAsync({
@@ -71,8 +76,10 @@ import { EmailModule } from './email/email.module';
     ApplicationModule,
     ReviewsModule,
     EmailModule,
+    JobaggregatorModule,
   ],
   providers: [CacheService],
   exports: [CacheService],
+  
 })
 export class AppModule {}

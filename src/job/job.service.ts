@@ -45,6 +45,7 @@ export class JobService {
       ...createJobDto,
       slug,
       postedBy: userObjectId,
+      isExternal: false, // ✅ User-created jobs are not external
       reports: [], // ✅ Initialize empty reports array
     });
 
@@ -62,13 +63,15 @@ export class JobService {
     return populatedJob;
   }
   
-  // ✅ Updated findAll with pagination and category filter
+  // ✅ Updated findAll with pagination, category filter, and SOURCE filter
   async findAll(
     filters?: {
       status?: JobStatus;
       type?: string;
       location?: string;
-      category?: string; // ✅ NEW: Category filter
+      category?: string;
+      source?: 'all' | 'external' | 'user'; // ✅ NEW: Source filter
+      search?: string; // ✅ NEW: Search query
       page?: number;
       limit?: number;
     }
@@ -95,9 +98,26 @@ export class JobService {
       query.location = { $regex: filters.location, $options: 'i' };
     }
 
-    // ✅ NEW: Category filter
+    // ✅ Category filter
     if (filters?.category) {
       query.category = filters.category;
+    }
+
+    // ✅ NEW: Source filter
+    if (filters?.source === 'external') {
+      query.isExternal = true;
+    } else if (filters?.source === 'user') {
+      query.isExternal = { $ne: true };
+    }
+    // 'all' or undefined = no filter on isExternal
+
+    // ✅ NEW: Text search
+    if (filters?.search) {
+      query.$or = [
+        { title: { $regex: filters.search, $options: 'i' } },
+        { company: { $regex: filters.search, $options: 'i' } },
+        { description: { $regex: filters.search, $options: 'i' } },
+      ];
     }
 
     // ✅ Pagination with safety checks
@@ -166,6 +186,9 @@ export class JobService {
       throw new NotFoundException('Job not found');
     }
 
+    // ✅ Increment view count
+    await this.jobModel.findByIdAndUpdate(id, { $inc: { views: 1 } });
+
     return job;
   }
 
@@ -193,6 +216,9 @@ export class JobService {
     if (!job) {
       throw new NotFoundException('Job not found');
     }
+
+    // ✅ Increment view count
+    await this.jobModel.findOneAndUpdate({ slug }, { $inc: { views: 1 } });
 
     return job;
   }
@@ -225,6 +251,11 @@ export class JobService {
 
   async update(id: string, updateJobDto: UpdateJobDto, user: any): Promise<Job> {
     const job: any = await this.findOne(id);
+
+    // ✅ External jobs cannot be edited
+    if (job.isExternal) {
+      throw new ForbiddenException('External jobs cannot be edited');
+    }
 
     const isAdmin = user.isAdmin;
     const isOwner = job.postedBy?._id?.toString() === user._id?.toString();
@@ -264,12 +295,20 @@ export class JobService {
     const isAdmin = user.isAdmin || user.role === 'admin';
     const isOwner = postedBy?._id?.toString() === user._id?.toString();
 
+    // ✅ External jobs can only be deleted by admins
+    if (job.isExternal && !isAdmin) {
+      throw new ForbiddenException('Only admins can delete external jobs');
+    }
+
     if (!isAdmin && !isOwner) {
       throw new ForbiddenException('You can only delete your own jobs');
     }
 
-    // ✅ Delete all applications for this job FIRST
-    const deletedApplicationsCount = await this.applicationService.deleteApplicationsByJob(id);
+    // ✅ Delete all applications for this job FIRST (only for non-external jobs)
+    let deletedApplicationsCount = 0;
+    if (!job.isExternal) {
+      deletedApplicationsCount = await this.applicationService.deleteApplicationsByJob(id);
+    }
 
     // ✅ Then delete the job
     await this.jobModel.findByIdAndDelete(id);
@@ -313,7 +352,7 @@ export class JobService {
     };
   }
 
-  // ✅ NEW: Get all categories
+  // ✅ Get all categories
   async getCategories(): Promise<string[]> {
     return [
       'Technology',
@@ -339,12 +378,13 @@ export class JobService {
     ];
   }
 
-  // ✅ NEW: Get jobs by category
+  // ✅ Get jobs by category (with source filter)
   async findByCategory(
     category: string, 
     filters?: {
       page?: number;
       limit?: number;
+      source?: 'all' | 'external' | 'user'; // ✅ NEW
     }
   ): Promise<{
     data: Job[];
@@ -359,7 +399,14 @@ export class JobService {
     const limit = Math.max(1, Math.min(100, filters?.limit || 10));
     const skip = (page - 1) * limit;
 
-    const query = { category, status: 'active' };
+    const query: any = { category, status: 'active' };
+    
+    // ✅ NEW: Source filter
+    if (filters?.source === 'external') {
+      query.isExternal = true;
+    } else if (filters?.source === 'user') {
+      query.isExternal = { $ne: true };
+    }
     
     const [jobs, total] = await Promise.all([
       this.jobModel
@@ -390,7 +437,7 @@ export class JobService {
     };
   }
 
-  // ✅ FIXED: Report a job - Added null check
+  // ✅ Report a job
   async reportJob(jobId: string, reportJobDto: ReportJobDto, userId: string): Promise<Job> {
     if (!Types.ObjectId.isValid(jobId)) {
       throw new NotFoundException('Invalid job ID');
@@ -427,7 +474,6 @@ export class JobService {
 
     console.log(`✅ Job ${jobId} reported by user ${userId}. Reason: ${reportJobDto.reason}`);
 
-    // ✅ FIXED: Added null check
     const updatedJob = await this.jobModel
       .findById(jobId)
       .populate('postedBy', '-password')
@@ -440,16 +486,15 @@ export class JobService {
     return updatedJob;
   }
 
-  // ✅ FIXED: Get all reports - Fixed type issues
+  // ✅ Get all reports (includes external job info)
   async getAllReports(): Promise<any[]> {
     const jobs = await this.jobModel
-      .find({ 'reports.0': { $exists: true } }) // Jobs with at least 1 report
+      .find({ 'reports.0': { $exists: true } })
       .populate('postedBy', '-password')
       .populate('reports.userId', 'firstName lastName email')
       .sort({ 'reports.reportedAt': -1 })
       .exec();
 
-    // ✅ FIXED: Properly typed allReports array
     const allReports: any[] = [];
     jobs.forEach((job) => {
       job.reports.forEach((report: any) => {
@@ -460,6 +505,8 @@ export class JobService {
           jobCompany: job.company,
           jobSlug: job.slug,
           jobCategory: job.category,
+          isExternal: job.isExternal, // ✅ Include this for context
+          externalSource: job.externalSource,
           postedBy: job.postedBy,
           reportedBy: report.userId,
           reason: report.reason,
@@ -474,7 +521,7 @@ export class JobService {
     return allReports;
   }
 
-  // ✅ FIXED: Update report status - Added null check
+  // ✅ Update report status
   async updateReportStatus(
     jobId: string,
     reportId: string,
@@ -497,7 +544,6 @@ export class JobService {
 
     console.log(`✅ Report ${reportId} status updated to: ${status}`);
 
-    // ✅ FIXED: Added null check
     const updatedJob = await this.jobModel
       .findById(jobId)
       .populate('postedBy', '-password')
@@ -511,7 +557,7 @@ export class JobService {
     return updatedJob;
   }
 
-  // ✅ NEW: Get category statistics
+  // ✅ Get category statistics (includes external job breakdown)
   async getCategoryStats(): Promise<any[]> {
     const stats = await this.jobModel.aggregate([
       { $match: { status: 'active' } },
@@ -519,6 +565,12 @@ export class JobService {
         $group: {
           _id: '$category',
           count: { $sum: 1 },
+          externalCount: {
+            $sum: { $cond: [{ $eq: ['$isExternal', true] }, 1, 0] }
+          },
+          userCount: {
+            $sum: { $cond: [{ $ne: ['$isExternal', true] }, 1, 0] }
+          }
         },
       },
       { $sort: { count: -1 } },
@@ -527,6 +579,63 @@ export class JobService {
     return stats.map((stat) => ({
       category: stat._id,
       count: stat.count,
+      externalCount: stat.externalCount,
+      userCount: stat.userCount,
     }));
+  }
+
+  // ✅ NEW: Get source statistics
+  async getSourceStats(): Promise<{
+    total: number;
+    external: number;
+    user: number;
+    byExternalSource: { source: string; count: number }[];
+  }> {
+    const [total, external, bySource] = await Promise.all([
+      this.jobModel.countDocuments({ status: 'active' }),
+      this.jobModel.countDocuments({ status: 'active', isExternal: true }),
+      this.jobModel.aggregate([
+        { $match: { isExternal: true, status: 'active' } },
+        { $group: { _id: '$externalSource', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+    ]);
+
+    return {
+      total,
+      external,
+      user: total - external,
+      byExternalSource: bySource.map(s => ({ source: s._id, count: s.count })),
+    };
+  }
+
+  // ✅ NEW: Search jobs with full-text search
+  async searchJobs(
+    query: string,
+    filters?: {
+      category?: string;
+      type?: string;
+      source?: 'all' | 'external' | 'user';
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    data: Job[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    return this.findAll({
+      search: query,
+      category: filters?.category,
+      type: filters?.type,
+      source: filters?.source,
+      page: filters?.page,
+      limit: filters?.limit,
+      status: JobStatus.ACTIVE,
+    });
   }
 }

@@ -103,7 +103,7 @@ export class Job extends Document {
   }>;
 
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User' })
   postedBy: Types.ObjectId | User;
 
   // ✅ ADD SLUG FIELD
@@ -113,6 +113,31 @@ export class Job extends Document {
   // Virtual fields for relationships
   applications?: Types.ObjectId[];
   reviews?: Types.ObjectId[];
+
+
+  // =============================================
+  // EXTERNAL JOB FIELDS (for aggregated jobs)
+  // =============================================
+  @Prop({ default: false })
+  isExternal: boolean;
+
+  @Prop()
+  externalSource?: string; // 'Remotive', 'RemoteOK', 'Arbeitnow', 'Himalayas'
+
+  @Prop({ index: true })
+  externalSourceId?: string; // Unique ID from external source
+
+  @Prop()
+  externalApplyUrl?: string; // Original apply URL
+
+  @Prop()
+  companyLogo?: string;
+
+  @Prop([String])
+  tags?: string[];
+
+ createdAt: Date;
+  updatedAt: Date;
 }
 
 export const JobSchema = SchemaFactory.createForClass(Job);
@@ -136,6 +161,9 @@ JobSchema.set('toJSON', { virtuals: true });
 JobSchema.set('toObject', { virtuals: true });
 
 // Create indexes for better query performance
-
+JobSchema.index({ status: 1, createdAt: -1 });
+JobSchema.index({ isExternal: 1, externalSourceId: 1 });
+JobSchema.index({ isExternal: 1, externalSource: 1 });
+JobSchema.index({ category: 1, status: 1, createdAt: -1 });
 JobSchema.index({ status: 1, type: 1, location: 1 });
 JobSchema.index({ postedBy: 1 });
