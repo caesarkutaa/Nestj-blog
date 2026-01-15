@@ -53,8 +53,8 @@ export class ApplicationService {
     // Create application
     const application = await this.applicationModel.create({
       ...applicationData,
-      user: userObjectId,
-      job: jobId,
+      user: new Types.ObjectId(user._id), // Force cast
+       job: new Types.ObjectId(jobId),     // Force cast to ObjectId here!
     });
 
     const populatedApplication = await this.applicationModel

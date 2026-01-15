@@ -53,9 +53,9 @@ async function bootstrap() {
     );
 
     // ✅ Use environment port
-    const PORT = process.env.PORT || 5000;
+    const PORT = process.env.PORT || 8000;
     
-    await app.listen(PORT);
+    await app.listen(PORT);  
     
     console.log('========================================');
     console.log(`🚀 Server successfully started`);

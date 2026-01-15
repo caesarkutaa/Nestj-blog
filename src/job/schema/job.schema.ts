@@ -136,6 +136,11 @@ export class Job extends Document {
   @Prop([String])
   tags?: string[];
 
+  // 🚀 ADD THIS FIELD HERE
+  @Prop({ type: Types.ObjectId, ref: 'Company', index: true })
+  postedByCompany: Types.ObjectId;
+
+
  createdAt: Date;
   updatedAt: Date;
 }

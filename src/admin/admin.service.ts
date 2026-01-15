@@ -9,6 +9,7 @@ import { User } from 'src/user/schemas/user.schema';
 import { Job } from 'src/job/schema/job.schema';
 import { UpdateAdminProfileDto, ChangeAdminPasswordDto } from './dto/update-admin-profile.dto';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { Company } from '../company/schema/company.schema'; // Adjust path to your actual schema
 
 @Injectable()
 export class AdminService {
@@ -16,6 +17,7 @@ export class AdminService {
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Job.name) private jobModel: Model<Job>,
+    @InjectModel(Company.name) private companyModel: Model<Company>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private cloudinaryService: CloudinaryService,
@@ -302,4 +304,67 @@ async deleteUser(
     deletedJobs: deletedJobs.deletedCount,
   };
 }
+
+async getAllCompanies(): Promise<Company[]> {
+    console.log('🔍 ADMIN_SERVICE: Fetching from Company Collection...');
+    
+    const companies = await this.companyModel
+      .find()
+      .sort({ createdAt: -1 })
+      .exec();
+
+    console.log(`📊 ADMIN_SERVICE: Found ${companies.length} companies in the Company schema.`);
+    return companies;
+  }
+
+  // ✅ Get Recent Companies for Dashboard
+  async getRecentCompanies(limit: number = 5): Promise<User[]> {
+    return await this.userModel
+      .find({ role: 'company' })
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .exec();
+  }
+
+  // ✅ Delete Company (Admin power)
+  async deleteCompany(adminId: string, companyId: string): Promise<{ message: string }> {
+    const admin = await this.adminModel.findById(adminId);
+    if (!admin) throw new NotFoundException('Admin not found');
+
+    const company = await this.userModel.findOne({ _id: companyId, role: 'company' });
+    if (!company) throw new NotFoundException('Company not found');
+
+    // Delete jobs associated with this company first
+    await this.jobModel.deleteMany({ postedBy: companyId });
+    await this.userModel.findByIdAndDelete(companyId);
+
+    return { message: 'Company and associated jobs deleted successfully' };
+  }
+// ✅ Block Company
+async blockCompany(companyId: string, reason?: string): Promise<any> {
+  const company = await this.companyModel.findById(companyId);
+  if (!company) throw new NotFoundException('Company not found');
+
+  company.isBlocked = true;
+  company.blockedAt = new Date();
+  company.blockReason = reason || 'Violation of terms';
+
+  await company.save();
+  return { message: 'Company blocked successfully', company };
+}
+
+// ✅ Unblock Company
+async unblockCompany(companyId: string): Promise<any> {
+  const company = await this.companyModel.findById(companyId);
+  if (!company) throw new NotFoundException('Company not found');
+
+  company.isBlocked = false;
+  company.blockedAt = undefined;
+  company.blockReason = undefined;
+
+  await company.save();
+  return { message: 'Company unblocked successfully', company };
+}
+
 }

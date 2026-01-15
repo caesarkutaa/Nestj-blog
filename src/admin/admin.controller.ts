@@ -13,6 +13,7 @@ import {
   UploadedFile,
   Request,
   NotFoundException,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminService } from './admin.service';
@@ -171,4 +172,30 @@ async deleteUser(
   
   return await this.adminService.deleteUser(adminId, userId);
 }
+
+
+
+@Get('companies')
+async getCompanies() {
+  // This calls the service method we created earlier
+  const companies = await this.adminService.getAllCompanies();
+  return companies; 
+}
+
+  // ✅ DELETE /admin/companies/:id
+  @Delete('companies/:id')
+  async deleteCompany(@Req() req, @Param('id') id: string) {
+    return await this.adminService.deleteCompany(req.user.userId, id);
+  }
+
+@Patch('companies/:id/block')
+async block(@Param('id') id: string, @Body('reason') reason: string) {
+  return await this.adminService.blockCompany(id, reason);
+}
+
+@Patch('companies/:id/unblock')
+async unblock(@Param('id') id: string) {
+  return await this.adminService.unblockCompany(id);
+}
+
 }
