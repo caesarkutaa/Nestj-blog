@@ -12,7 +12,7 @@ import {
   HttpStatus,
   HttpException,
   Patch,
-  Req,
+  Logger,
 } from '@nestjs/common';
 import { CompanyService } from './company.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -32,16 +32,14 @@ import {
 
 @Controller('company')
 export class CompanyController {
+  private readonly logger = new Logger(CompanyController.name);
+
   constructor(private readonly companyService: CompanyService) {}
 
   // =============================================
   // AUTH ROUTES
   // =============================================
 
-  /**
-   * POST /company/register
-   * Register a new company account
-   */
   @Post('register')
   async register(@Body() dto: RegisterCompanyDto) {
     try {
@@ -59,10 +57,6 @@ export class CompanyController {
     }
   }
 
-  /**
-   * POST /company/login
-   * Login with company credentials
-   */
   @Post('login')
   async login(@Body() dto: LoginCompanyDto) {
     try {
@@ -70,6 +64,7 @@ export class CompanyController {
       return {
         success: true,
         message: 'Login successful',
+        token: result.token,  // ✅ Return token at root level
         data: result,
       };
     } catch (error) {
@@ -80,10 +75,6 @@ export class CompanyController {
     }
   }
 
-  /**
-   * POST /company/verify-email/:token
-   * Verify company email
-   */
   @Post('verify-email/:token')
   async verifyEmail(@Param('token') token: string) {
     try {
@@ -100,10 +91,33 @@ export class CompanyController {
     }
   }
 
-  /**
-   * POST /company/resend-verification
-   * Resend verification email
-   */
+  @Get('verify-email')
+  async verifyCompany(
+    @Query('token') token: string,
+    @Query('type') type: string,
+  ) {
+    if (!token) {
+      throw new HttpException('Token is required', HttpStatus.BAD_REQUEST);
+    }
+
+    if (type !== 'company') {
+      throw new HttpException('Invalid verification type for this route', HttpStatus.BAD_REQUEST);
+    }
+
+    try {
+      await this.companyService.verifyEmail(token);
+      return {
+        success: true,
+        message: 'Your company email has been verified! You can now log in to your dashboard.',
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Verification failed',
+        error.status || HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
   @Post('resend-verification')
   async resendVerification(@Body('email') email: string) {
     try {
@@ -119,42 +133,7 @@ export class CompanyController {
       );
     }
   }
-// company.controller.ts
 
-// company.controller.ts
-
-@Get('verify-email') // This matches the link: /verify-email?token=...&type=company
-async verifyCompany(
-  @Query('token') token: string,
-  @Query('type') type: string // Add this to capture the type from the link
-) {
-  if (!token) {
-    throw new HttpException('Token is required', HttpStatus.BAD_REQUEST);
-  }
-
-  // Security check: Ensure this endpoint only processes 'company' types
-  if (type !== 'company') {
-    throw new HttpException('Invalid verification type for this route', HttpStatus.BAD_REQUEST);
-  }
-  
-  try {
-    await this.companyService.verifyEmail(token);
-    
-    return { 
-      success: true, 
-      message: 'Your company email has been verified! You can now log in to your dashboard.' 
-    };
-  } catch (error) {
-    throw new HttpException(
-      error.message || 'Verification failed',
-      error.status || HttpStatus.BAD_REQUEST
-    );
-  }
-}
-  /**
-   * POST /company/forgot-password
-   * Request password reset
-   */
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     try {
@@ -171,10 +150,6 @@ async verifyCompany(
     }
   }
 
-  /**
-   * POST /company/reset-password
-   * Reset password with token
-   */
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto) {
     try {
@@ -195,14 +170,12 @@ async verifyCompany(
   // PROTECTED ROUTES - COMPANY DASHBOARD
   // =============================================
 
-  /**
-   * GET /company/profile
-   * Get current company profile
-   */
   @Get('profile')
   @UseGuards(CompanyAuthGuard)
   async getProfile(@Request() req) {
     try {
+      // ✅ FIXED: Use req.company (set by CompanyAuthGuard)
+      this.logger.debug(`Getting profile for company: ${req.company?.id}`);
       const company = await this.companyService.findById(req.company.id);
       return {
         success: true,
@@ -216,22 +189,11 @@ async verifyCompany(
     }
   }
 
-
-  @Get('me')
-@UseGuards(JwtAuthGuard) // Ensure you have a guard that populates req.user
-async getMe(@Req() req) {
-  // req.user.id comes from your JwtStrategy
-  return this.companyService.findById(req.user.id);
-}
-
-  /**
-   * PUT /company/profile
-   * Update company profile
-   */
   @Put('profile')
   @UseGuards(CompanyAuthGuard)
   async updateProfile(@Request() req, @Body() dto: UpdateCompanyDto) {
     try {
+      // ✅ FIXED: Use req.company
       const company = await this.companyService.updateProfile(req.company.id, dto);
       return {
         success: true,
@@ -246,14 +208,11 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * POST /company/change-password
-   * Change company password
-   */
   @Post('change-password')
   @UseGuards(CompanyAuthGuard)
   async changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
     try {
+      // ✅ FIXED: Use req.company
       await this.companyService.changePassword(
         req.company.id,
         dto.currentPassword,
@@ -275,14 +234,12 @@ async getMe(@Req() req) {
   // JOB MANAGEMENT ROUTES
   // =============================================
 
-  /**
-   * POST /company/jobs
-   * Create a new job posting
-   */
   @Post('jobs')
   @UseGuards(CompanyAuthGuard)
   async createJob(@Request() req, @Body() dto: CreateJobDto) {
     try {
+      // ✅ FIXED: Use req.company
+      this.logger.debug(`Creating job for company: ${req.company?.id}`);
       const job = await this.companyService.createJob(req.company.id, dto);
       return {
         success: true,
@@ -297,10 +254,6 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * GET /company/jobs
-   * Get all jobs posted by this company
-   */
   @Get('jobs')
   @UseGuards(CompanyAuthGuard)
   async getMyJobs(
@@ -310,16 +263,25 @@ async getMe(@Req() req) {
     @Query('status') status?: string,
   ) {
     try {
-      const result = await this.companyService.getCompanyJobs(
-        req.company.id,
-        { page, limit, status },
-      );
+      // ✅ FIXED: Use req.company (NOT req.user!)
+      const companyId = req.company?.id;
+
+      this.logger.debug(`[getMyJobs] req.company: ${JSON.stringify(req.company)}`);
+      this.logger.debug(`[getMyJobs] Fetching jobs for Company ID: ${companyId}`);
+
+      if (!companyId) {
+        throw new HttpException('Company ID not found in request', HttpStatus.UNAUTHORIZED);
+      }
+
+      const result = await this.companyService.getCompanyJobs(companyId, { page, limit, status });
+
       return {
         success: true,
         data: result.jobs,
         pagination: result.pagination,
       };
     } catch (error) {
+      this.logger.error(`[getMyJobs] Error: ${error.message}`);
       throw new HttpException(
         error.message || 'Failed to fetch jobs',
         error.status || HttpStatus.BAD_REQUEST,
@@ -327,14 +289,11 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * GET /company/jobs/:id
-   * Get a specific job
-   */
   @Get('jobs/:id')
   @UseGuards(CompanyAuthGuard)
   async getJob(@Request() req, @Param('id') jobId: string) {
     try {
+      // ✅ FIXED: Use req.company
       const job = await this.companyService.getCompanyJob(req.company.id, jobId);
       return {
         success: true,
@@ -348,10 +307,6 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * PUT /company/jobs/:id
-   * Update a job posting
-   */
   @Put('jobs/:id')
   @UseGuards(CompanyAuthGuard)
   async updateJob(
@@ -360,6 +315,7 @@ async getMe(@Req() req) {
     @Body() dto: CreateJobDto,
   ) {
     try {
+      // ✅ FIXED: Use req.company
       const job = await this.companyService.updateJob(req.company.id, jobId, dto);
       return {
         success: true,
@@ -374,10 +330,6 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * PATCH /company/jobs/:id/status
-   * Update job status (active, closed, draft)
-   */
   @Patch('jobs/:id/status')
   @UseGuards(CompanyAuthGuard)
   async updateJobStatus(
@@ -386,6 +338,7 @@ async getMe(@Req() req) {
     @Body() dto: UpdateJobStatusDto,
   ) {
     try {
+      // ✅ FIXED: Use req.company
       const job = await this.companyService.updateJobStatus(req.company.id, jobId, dto.status);
       return {
         success: true,
@@ -400,14 +353,11 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * DELETE /company/jobs/:id
-   * Delete a job posting
-   */
   @Delete('jobs/:id')
   @UseGuards(CompanyAuthGuard)
   async deleteJob(@Request() req, @Param('id') jobId: string) {
     try {
+      // ✅ FIXED: Use req.company
       await this.companyService.deleteJob(req.company.id, jobId);
       return {
         success: true,
@@ -425,10 +375,6 @@ async getMe(@Req() req) {
   // APPLICATIONS MANAGEMENT
   // =============================================
 
-  /**
-   * GET /company/applications
-   * Get all applications for company's jobs
-   */
   @Get('applications')
   @UseGuards(CompanyAuthGuard)
   async getApplications(
@@ -439,6 +385,9 @@ async getMe(@Req() req) {
     @Query('status') status?: string,
   ) {
     try {
+      // ✅ FIXED: Use req.company
+      this.logger.debug(`[getApplications] Company ID: ${req.company?.id}`);
+      
       const result = await this.companyService.getApplications(
         req.company.id,
         { page, limit, jobId, status },
@@ -456,10 +405,6 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * PATCH /company/applications/:id/status
-   * Update application status
-   */
   @Patch('applications/:id/status')
   @UseGuards(CompanyAuthGuard)
   async updateApplicationStatus(
@@ -468,6 +413,7 @@ async getMe(@Req() req) {
     @Body() dto: UpdateApplicationStatusDto,
   ) {
     try {
+      // ✅ FIXED: Use req.company
       const application = await this.companyService.updateApplicationStatus(
         req.company.id,
         applicationId,
@@ -490,16 +436,13 @@ async getMe(@Req() req) {
   // DASHBOARD STATS
   // =============================================
 
-  /**
-   * GET /company/dashboard/stats
-   * Get company dashboard statistics
-   */
   @Get('dashboard/stats')
   @UseGuards(CompanyAuthGuard)
   async getDashboardStats(@Request() req) {
     try {
+      // ✅ FIXED: Use req.company
+      this.logger.debug(`[getDashboardStats] Company ID: ${req.company?.id}`);
       const stats = await this.companyService.getDashboardStats(req.company.id);
-      console.log(stats)
       return {
         success: true,
         data: stats,
@@ -516,10 +459,41 @@ async getMe(@Req() req) {
   // PUBLIC ROUTES
   // =============================================
 
-  /**
-   * GET /company/public/:slug
-   * Get public company profile
-   */
+  @Get('public/id/:id')
+  async getPublicProfileById(@Param('id') id: string) {
+    try {
+      const company = await this.companyService.findById(id);
+      // Return only public fields
+      return {
+        success: true,
+        data: {
+          _id: company._id,
+          companyName: company.companyName,
+          slug: company.slug,
+          logo: company.logo,
+          coverImage: company.coverImage,
+          industry: company.industry,
+          companySize: company.companySize,
+          foundedYear: company.foundedYear,
+          description: company.description,
+          shortDescription: company.shortDescription,
+          headquarters: company.headquarters,
+          city: company.city,
+          country: company.country,
+          website: company.website,
+          linkedIn: company.linkedIn,
+          twitter: company.twitter,
+          totalJobsPosted: company.totalJobsPosted,
+        },
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Company not found',
+        error.status || HttpStatus.NOT_FOUND,
+      );
+    }
+  }
+
   @Get('public/:slug')
   async getPublicProfile(@Param('slug') slug: string) {
     try {
@@ -536,10 +510,6 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * GET /company/public/:slug/jobs
-   * Get public company jobs
-   */
   @Get('public/:slug/jobs')
   async getPublicJobs(
     @Param('slug') slug: string,
@@ -561,14 +531,32 @@ async getMe(@Req() req) {
     }
   }
 
+  // Public route to get company by ID (for job detail pages)
+  @Get(':id')
+  async getCompanyById(@Param('id') id: string) {
+    try {
+      const company = await this.companyService.findById(id);
+      return {
+        _id: company._id,
+        companyName: company.companyName,
+        email: company.email,
+        logo: company.logo,
+        description: company.description,
+        industry: company.industry,
+        location: company.headquarters,
+        country: company.country,
+        website: company.website,
+        phone: company.phone,
+      };
+    } catch (error) {
+      throw new HttpException('Company not found', HttpStatus.NOT_FOUND);
+    }
+  }
+
   // =============================================
   // ADMIN ROUTES
   // =============================================
 
-  /**
-   * GET /company/admin/all
-   * Get all companies (Admin only)
-   */
   @Get('admin/all')
   @UseGuards(JwtAuthGuard, AdminGuard)
   async getAllCompanies(
@@ -597,15 +585,24 @@ async getMe(@Req() req) {
     }
   }
 
-  /**
-   * PATCH /company/admin/:id/verify
-   * Verify a company (Admin only)
-   */
+  @Patch('admin/:id/verify')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async verifyCompanyAdmin(@Param('id') companyId: string) {
+    try {
+      const company = await this.companyService.verifyCompanyByAdmin(companyId);
+      return {
+        success: true,
+        message: 'Company verified successfully',
+        data: company,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Failed to verify company',
+        error.status || HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
 
-  /**
-   * PATCH /company/admin/:id/status
-   * Update company status (Admin only)
-   */
   @Patch('admin/:id/status')
   @UseGuards(JwtAuthGuard, AdminGuard)
   async updateCompanyStatus(

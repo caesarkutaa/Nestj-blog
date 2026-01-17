@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, Document } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
@@ -119,9 +119,21 @@ export class CompanyService {
 }
 
 
-  // company.service.ts
 
-// Change Promise<void> to Promise<{ success: boolean; message: string }>
+async findOne(id: string): Promise<any> { // Changed from Promise<Company> to Promise<any>
+  const company = await this.companyModel
+    .findById(id)
+    .lean() // .lean() makes the object a simple JS object, breaking the strict "Company" class type
+    .exec();
+  
+  if (!company) {
+    throw new NotFoundException(`Company with ID ${id} not found`);
+  }
+
+  return company;
+}
+
+
 async verifyEmail(token: string): Promise<{ success: boolean; message: string }> {
   // 1. Find company by token and check if token is still valid
   const company = await this.companyModel.findOne({
@@ -292,11 +304,36 @@ async verifyEmail(token: string): Promise<{ success: boolean; message: string }>
     return job;
   }
 
- async getCompanyJobs(companyId: string, options: { page: number; limit: number; status?: string }) {
+async getCompanyJobs(companyId: string, options: { page: number; limit: number; status?: string }) {
   const { page = 1, limit = 10, status } = options;
   const skip = (page - 1) * limit;
-  const query: any = { postedByCompany: new Types.ObjectId(companyId) };
+
+
+  this.logger.debug(`Service received companyId: "${companyId}"`);
+
+  if (!companyId || companyId === 'undefined') {
+    throw new HttpException('Company ID is missing from request', HttpStatus.BAD_REQUEST);
+  }
+
+  // Check if the company profile actually exists
+  const company = await this.companyModel.findById(companyId);
+  if (!company) {
+    this.logger.error(`No company profile found for ID: ${companyId}`);
+    throw new NotFoundException('Company profile not found'); // This is your 404!
+  }
+
+
+  // Fix: Use $or to find by both ObjectId and String just in case
+  const query: any = {
+    $or: [
+      { postedByCompany: new Types.ObjectId(companyId) },
+      { postedByCompany: companyId }
+    ]
+  };
+  
   if (status) query.status = status;
+
+  this.logger.debug(`Fetching jobs for companyId: ${companyId}`);
 
   const [jobs, total] = await Promise.all([
     this.jobModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
@@ -470,47 +507,55 @@ async getApplications(
   // =============================================
 
  async getDashboardStats(companyId: string): Promise<any> {
-  const companyObjectId = new Types.ObjectId(companyId);
+    const companyObjectId = new Types.ObjectId(companyId);
 
-  // 1. Get all jobs owned by this company
-  const companyJobs = await this.jobModel
-    .find({ postedByCompany: companyObjectId })
-    .select('_id')
-    .lean();
-  
-  // 2. Create an array containing BOTH ObjectIds and Strings
-  const jobIdsAsStrings = companyJobs.map(j => j._id.toString());
-  const jobIdsAsObjects = jobIdsAsStrings.map(id => new Types.ObjectId(id));
-  const combinedSearchIds = [...jobIdsAsStrings, ...jobIdsAsObjects];
-
-  // 3. Parallel execution for speed
-  const [totalJobs, activeJobs, totalApplications, recentJobs] = await Promise.all([
-    this.jobModel.countDocuments({ postedByCompany: companyObjectId }),
-    this.jobModel.countDocuments({ postedByCompany: companyObjectId, status: 'active' }),
+    // 1. Get all jobs owned by this company
+    const companyJobs = await this.jobModel
+      .find({ postedByCompany: companyObjectId })
+      .select('_id')
+      .lean();
     
-    // Search the application collection using the combined array
-    this.applicationModel.countDocuments({ 
-      job: { $in: combinedSearchIds } 
-    }), 
+    // 2. Create an array containing BOTH ObjectIds and Strings
+    const jobIdsAsStrings = companyJobs.map(j => j._id.toString());
+    const jobIdsAsObjects = jobIdsAsStrings.map(id => new Types.ObjectId(id));
+    const combinedSearchIds = [...jobIdsAsStrings, ...jobIdsAsObjects];
 
-    this.jobModel.find({ postedByCompany: companyObjectId })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .lean() 
-  ]);
+    // 3. Parallel execution for speed
+    const [totalJobs, activeJobs, totalApplications, recentJobsRaw] = await Promise.all([
+      this.jobModel.countDocuments({ postedByCompany: companyObjectId }),
+      this.jobModel.countDocuments({ postedByCompany: companyObjectId, status: 'active' }),
+      this.applicationModel.countDocuments({ 
+        job: { $in: combinedSearchIds } 
+      }), 
+      this.jobModel.find({ postedByCompany: companyObjectId })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean() 
+    ]);
 
-  return {
-    overview: {
-      totalJobs,
-      activeJobs,
-      totalApplications: totalApplications || 0,
-    },
-    recentJobs: recentJobs.map(job => ({
-        ...job,
-        id: job._id.toString() 
-    }))
-  };
-}
+    // ✅ FIX: Add applicationCount to each recent job
+    const recentJobs = await Promise.all(
+      recentJobsRaw.map(async (job) => {
+        const count = await this.applicationModel.countDocuments({
+          job: { $in: [job._id, job._id.toString()] }
+        });
+        return {
+          ...job,
+          id: job._id.toString(),
+          applicationCount: count,
+        };
+      })
+    );
+
+    return {
+      overview: {
+        totalJobs,
+        activeJobs,
+        totalApplications: totalApplications || 0,
+      },
+      recentJobs,
+    };
+  }
   // =============================================
   // ADMIN FUNCTIONS
   // =============================================

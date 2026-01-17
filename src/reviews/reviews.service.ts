@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Review } from './schema/review.schema';
 import { Job } from '../job/schema/job.schema';
 import { User } from '../user/schemas/user.schema';
+import { Company } from '../company/schema/company.schema';
 import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
 
 @Injectable()
@@ -13,27 +14,71 @@ export class ReviewsService {
     private reviewModel: Model<Review>,
     @InjectModel(Job.name)
     private jobModel: Model<Job>,
+    @InjectModel(User.name)  // ✅ Add this
+    private userModel: Model<User>,
+    @InjectModel(Company.name)  // ✅ Add this
+    private companyModel: Model<Company>,
   ) {}
 
-  async create(createReviewDto: CreateReviewDto, user: any): Promise<any> {
+  async create(createReviewDto: CreateReviewDto, userId: string): Promise<any> {
     const { jobId, ...reviewData } = createReviewDto;
 
-    // Check if user is blocked
-    if (user.isBlocked) {
-      throw new ForbiddenException(
-        `Your account has been blocked. Reason: ${user.blockReason || 'No reason provided'}`,
-      );
+    console.log('🔍 Finding user with ID:', userId);
+
+    // ✅ First, try to find user in User collection
+    let user = await this.userModel.findById(userId);
+    let isCompany = false;
+    let username = '';
+
+    if (user) {
+      console.log('✅ Found user in User collection:', {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role
+      });
+
+      // Check if user is blocked
+      if (user.isBlocked) {
+        throw new ForbiddenException(
+          `Your account has been blocked. Reason: ${user.blockReason || 'No reason provided'}`,
+        );
+      }
+
+      username = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    } else {
+      // ✅ If not found in User collection, try Company collection
+      console.log('🔍 User not found in User collection, checking Company collection...');
+      const company = await this.companyModel.findById(userId);
+      
+      if (!company) {
+        throw new NotFoundException('User or Company not found');
+      }
+
+      console.log('✅ Found company:', {
+        companyName: company.companyName,
+        email: company.email
+      });
+
+      // Check if company is blocked
+      if (company.isBlocked) {
+        throw new ForbiddenException(
+          `Your account has been blocked. Reason: ${company.blockReason || 'No reason provided'}`,
+        );
+      }
+
+      isCompany = true;
+      username = company.companyName;
+      user = company as any; // Use company data as user
     }
 
     // Find the job
     const job = await this.jobModel.findById(jobId);
-
     if (!job) {
       throw new NotFoundException('Job not found');
     }
 
     // Convert to ObjectIds
-    const userObjectId = new Types.ObjectId(user._id);
+    const userObjectId = new Types.ObjectId(userId);
     const jobObjectId = new Types.ObjectId(jobId);
 
     // Check if user already reviewed this job
@@ -46,23 +91,44 @@ export class ReviewsService {
       throw new ConflictException('You have already reviewed this job');
     }
 
-    // Create username from user's first and last name
-    const username = `${user.firstName} ${user.lastName}`;
+    console.log('💾 Creating review with username:', username);
 
     // Create review
     const review = await this.reviewModel.create({
       ...reviewData,
       user: userObjectId,
       job: jobObjectId,
-      username: username, // Add username
+      username: username,
     });
+
+    // ✅ Populate with the correct collection based on user type
+    const populateRef = isCompany ? 'Company' : 'User';
+    const populateFields = isCompany 
+      ? 'companyName email logo' 
+      : 'firstName lastName profileImage email';
 
     const populatedReview = await this.reviewModel
       .findById(review._id)
-      .populate('user', 'firstName lastName profileImage')
+      .populate({
+        path: 'user',
+        select: populateFields,
+        model: populateRef,
+      })
       .exec();
 
+    console.log('✅ Review created successfully');
+
     return populatedReview;
+  }
+
+  async findByJob(jobId: string): Promise<Review[]> {
+    const reviews = await this.reviewModel
+      .find({ job: jobId })
+      .populate('user', 'firstName lastName profileImage email companyName role')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return reviews;
   }
 
   // ✅ NEW: Get all reviews
@@ -148,16 +214,21 @@ export class ReviewsService {
     return updatedReview;
   }
 
-  async remove(id: string, user: any): Promise<void> {
-    const review = await this.findOne(id);
+  async remove(reviewId: string, userId: string): Promise<any> {
+    const review = await this.reviewModel.findById(reviewId);
 
-    const reviewUser = review.user as any;
-    // Only review owner can delete
-    if (reviewUser?._id?.toString() !== user._id?.toString()) {
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    // Check if user owns this review
+    if (review.user.toString() !== userId) {
       throw new ForbiddenException('You can only delete your own reviews');
     }
 
-    await this.reviewModel.findByIdAndDelete(id);
+    await this.reviewModel.findByIdAndDelete(reviewId);
+
+    return { message: 'Review deleted successfully' };
   }
 
   async getJobRatingStats(jobId: string): Promise<{

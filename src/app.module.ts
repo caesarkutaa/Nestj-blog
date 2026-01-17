@@ -23,7 +23,7 @@ import { CompanyModule } from './company/company.module';
     ConfigModule.forRoot({ 
       isGlobal: true,
       envFilePath: '.env',
-    }),
+    }),   
      ScheduleModule.forRoot(),
 
     // ✅ MongoDB with better error handling

@@ -14,6 +14,7 @@ import {
   Request,
   NotFoundException,
   Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminService } from './admin.service';
@@ -23,6 +24,7 @@ import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { BlockUserDto } from './dto/block-user.dto';
 import { Public } from '../auth/auth.decorator';
 import { AdminGuard } from './../auth/admin.guard';
+import { RolesGuard } from 'src/auth/roles.guard';
 
 @Controller('admin')
 export class AdminController {
@@ -78,6 +80,7 @@ async getPublicProfile(@Param('id') id: string) {
     throw new NotFoundException('Admin not found');
   }
 }
+
 
   @Post('profile/picture')
   @UseGuards(JwtAuthGuard, AdminGuard)
@@ -183,10 +186,15 @@ async getCompanies() {
 }
 
   // ✅ DELETE /admin/companies/:id
-  @Delete('companies/:id')
-  async deleteCompany(@Req() req, @Param('id') id: string) {
-    return await this.adminService.deleteCompany(req.user.userId, id);
+@Delete('companies/:id')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async deleteCompany(@Req() req, @Param('id') id: string) {
+  // Add a check to see if req.user exists
+  if (!req.user?.userId) {
+    throw new UnauthorizedException('User not identified');
   }
+  return await this.adminService.deleteCompany(req.user.userId, id);
+}     
 
 @Patch('companies/:id/block')
 async block(@Param('id') id: string, @Body('reason') reason: string) {
@@ -197,5 +205,4 @@ async block(@Param('id') id: string, @Body('reason') reason: string) {
 async unblock(@Param('id') id: string) {
   return await this.adminService.unblockCompany(id);
 }
-
 }

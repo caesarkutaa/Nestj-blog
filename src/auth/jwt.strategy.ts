@@ -44,9 +44,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: any) {
     console.log('✅ JWT Payload validated:', payload);
     
-    if (!payload || !payload.sub) {
-      console.log('❌ Invalid payload - missing sub');
+    // ✅ Extract ID from either 'sub' or 'id' to support both User and Company payloads
+    const extractedId = payload.sub || payload.id;
+
+    if (!payload || !extractedId) {
+      console.log('❌ Invalid payload - missing sub or id');
       throw new UnauthorizedException('Invalid token payload');
+    }
+
+    // ✅ Check if it's a company token
+    if (payload.type === 'company') {
+      console.log('🏢 Company token detected');
+      return {
+        _id: extractedId,
+        id: extractedId,
+        email: payload.email,
+        companyName: payload.companyName,
+        type: 'company',
+        role: 'company'
+      };
     }
     
     // ✅ Check if it's an admin token
@@ -55,10 +71,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       
       // Return admin user object with ALL ID fields
       const adminUser = {
-        _id: payload.sub,
-        id: payload.sub,
-        userId: payload.sub,
-        sub: payload.sub,
+        _id: extractedId,
+        id: extractedId,
+        userId: extractedId,
+        sub: extractedId,
         username: payload.username,
         email: payload.email || null,
         role: payload.role || 'admin',
@@ -74,13 +90,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // ✅ Regular user token - fetch full user data
     try {
       const user = await this.userModel
-        .findById(payload.sub)
+        .findById(extractedId)
         .select('-password')
         .lean() // ✅ Use lean() to get plain JavaScript object
         .exec();
       
       if (!user) {
-        console.log('❌ User not found:', payload.sub);
+        console.log('❌ User not found:', extractedId);
         throw new UnauthorizedException('User not found');
       }
       

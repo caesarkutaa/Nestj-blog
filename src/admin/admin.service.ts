@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -327,20 +327,82 @@ async getAllCompanies(): Promise<Company[]> {
       .exec();
   }
 
-  // ✅ Delete Company (Admin power)
-  async deleteCompany(adminId: string, companyId: string): Promise<{ message: string }> {
-    const admin = await this.adminModel.findById(adminId);
-    if (!admin) throw new NotFoundException('Admin not found');
+ // ✅ CORRECT Delete Company Method for your Job Schema
+// Replace your deleteCompany method in admin.service.ts with this:
 
-    const company = await this.userModel.findOne({ _id: companyId, role: 'company' });
-    if (!company) throw new NotFoundException('Company not found');
+async deleteCompany(adminId: string, companyId: string): Promise<{ message: string; deletedJobs: number }> {
+  console.log('=== DELETE COMPANY SERVICE ===');
+  console.log('Admin ID:', adminId);
+  console.log('Company ID:', companyId);
 
-    // Delete jobs associated with this company first
-    await this.jobModel.deleteMany({ postedBy: companyId });
-    await this.userModel.findByIdAndDelete(companyId);
-
-    return { message: 'Company and associated jobs deleted successfully' };
+  // 1. Validate Admin
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) {
+    console.error('❌ Admin not found:', adminId);
+    throw new NotFoundException('Admin not found');
   }
+  console.log('✅ Admin verified:', admin.username);
+
+  // 2. Validate MongoDB ObjectId format
+  if (!companyId.match(/^[0-9a-fA-F]{24}$/)) {
+    console.error('❌ Invalid company ID format:', companyId);
+    throw new BadRequestException('Invalid company ID format');
+  }
+
+  // 3. Find the company in the Company collection
+  console.log('🔍 Looking for company with ID:', companyId);
+  
+  const company = await this.companyModel.findById(companyId);
+  
+  if (!company) {
+    console.error('❌ Company not found with ID:', companyId);
+    throw new NotFoundException(`Company with ID ${companyId} not found`);
+  }
+
+  console.log('✅ Company found:', {
+    id: company._id,
+    name: company.companyName,
+    email: company.email,
+  });
+
+  try {
+    // 4. Delete jobs posted by this company
+    // Your Job schema has TWO fields that can reference companies:
+    // - postedBy: References User collection
+    // - postedByCompany: References Company collection
+    
+    console.log('🔍 Searching for jobs posted by company...');
+    
+    // Method 1: Delete jobs where postedByCompany = companyId
+    const result1 = await this.jobModel.deleteMany({ postedByCompany: companyId });
+    console.log(`🗑️ Deleted ${result1.deletedCount} jobs via postedByCompany field`);
+    
+    // Method 2: Delete jobs where postedBy = companyId (in case company is also in User collection)
+    const result2 = await this.jobModel.deleteMany({ postedBy: companyId });
+    console.log(`🗑️ Deleted ${result2.deletedCount} jobs via postedBy field`);
+    
+    const totalDeleted = result1.deletedCount + result2.deletedCount;
+    console.log(`✅ Total jobs deleted: ${totalDeleted}`);
+    
+    // 5. Delete the company
+    console.log('🗑️ Deleting company...');
+    await this.companyModel.findByIdAndDelete(companyId);
+    console.log('✅ Company deleted');
+    
+    const message = `Company "${company.companyName}" and ${totalDeleted} associated jobs deleted successfully`;
+    console.log('✅ SUCCESS:', message);
+    
+    return { 
+      message,
+      deletedJobs: totalDeleted 
+    };
+    
+  } catch (error) {
+    console.error('❌ Database Delete Error:', error);
+    throw new InternalServerErrorException('Failed to delete company data');
+  }
+}
+  
 // ✅ Block Company
 async blockCompany(companyId: string, reason?: string): Promise<any> {
   const company = await this.companyModel.findById(companyId);

@@ -26,24 +26,24 @@ export class CompanyAuthGuard implements CanActivate {
 
     try {
       // Verify the token
-      const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET || 'your-secret-key',
-      });
+     // Inside CompanyAuthGuard -> canActivate
+const payload = this.jwtService.verify(token, {
+  secret: process.env.JWT_SECRET || 'your-secret-key',
+});
 
-      this.logger.debug(`Token payload: ${JSON.stringify(payload)}`);
+// Use the same extraction logic as your JwtStrategy
+const extractedId = payload.id || payload.sub;
 
-      // Check if it's a company token
-      if (payload.type !== 'company') {
-        this.logger.warn(`Invalid token type: ${payload.type}`);
-        throw new HttpException('Invalid token type', HttpStatus.UNAUTHORIZED);
-      }
+if (!extractedId) {
+  this.logger.error('No ID found in token payload');
+  throw new HttpException('Invalid token payload: missing ID', HttpStatus.UNAUTHORIZED);
+}
 
-      // Attach company info to request
-      request['company'] = {
-        id: payload.id,
-        email: payload.email,
-        companyName: payload.companyName,
-      };
+request['company'] = {
+  id: extractedId, // Ensure this is definitely the ID
+  email: payload.email,
+  companyName: payload.companyName,
+};
 
       this.logger.debug(`Company authenticated: ${payload.companyName} (${payload.id})`);
 
@@ -66,22 +66,17 @@ export class CompanyAuthGuard implements CanActivate {
     }
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined {
-    const authHeader = request.headers.authorization;
-    
-    if (!authHeader) {
-      this.logger.debug('No Authorization header found');
-      return undefined;
-    }
+private extractTokenFromHeader(request: Request): string | undefined {
+  // 1. Check Cookies first (New AuthContext way)
+  const cookieToken = request.cookies?.['auth_token']; // Ensure you have cookie-parser installed
+  if (cookieToken) return cookieToken;
 
-    const [type, token] = authHeader.split(' ');
-    
-    if (type !== 'Bearer' || !token) {
-      this.logger.debug(`Invalid auth header format: ${type}`);
-      return undefined;
-    }
+  // 2. Fallback to Header (Old way/Postman way)
+  const authHeader = request.headers.authorization;
+  if (!authHeader) return undefined;
 
-    this.logger.debug(`Token extracted: ${token.substring(0, 20)}...`);
-    return token;
-  }
+  const [type, token] = authHeader.split(' ');
+  return type === 'Bearer' ? token : undefined;
+}
+
 }

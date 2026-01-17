@@ -39,7 +39,7 @@ export class ReviewsController {
   @Get()
   async findAll() {
     return await this.reviewsService.findAll();
-  }
+  }    
 
   @Public()
   @Get('job/:jobId')

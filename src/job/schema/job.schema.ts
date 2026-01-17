@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { User } from '../../user/schemas/user.schema';
+import { Company } from 'src/company/schema/company.schema';
 
 export enum JobStatus {
   ACTIVE = 'active',
@@ -79,6 +80,7 @@ export class Job extends Document {
   @Prop({
     type: [{
       userId: { type: Types.ObjectId, ref: 'User' },
+      companyId: { type: Types.ObjectId, ref: 'Company' },
       reason: { 
         type: String, 
         enum: ['spam', 'scam', 'inappropriate', 'duplicate', 'misleading', 'other'],
