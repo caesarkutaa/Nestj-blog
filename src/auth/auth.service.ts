@@ -10,6 +10,7 @@ import { AdminService } from '../admin/admin.service';
 import { EmailService } from '../email/email.service'; 
 import { SignUpDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
 import { jwtConstants } from './constants';
+import { CompanyService } from 'src/company/company.service';
 
 @Injectable()
 export class AuthService {
@@ -19,7 +20,9 @@ export class AuthService {
     private adminService: AdminService,
     private jwtService: JwtService,
     private emailService: EmailService, 
+    private companyService: CompanyService,
   ) {}
+
 
   // ✅ UPDATED: Sign Up with Email Verification
   async signUp(signUpDto: SignUpDto): Promise<{ message: string; email: string }> {
@@ -55,6 +58,7 @@ export class AuthService {
       email,
       verificationToken,
       `${firstName} ${lastName}`,
+      'user'
     );
 
     console.log('✅ User registered, verification email sent to:', email);
@@ -65,7 +69,17 @@ export class AuthService {
     };
   }
 
-  // ✅ NEW: Verify Email
+  async handleEmailVerification(token: string, type: string) {
+    if (type === 'company') {
+      // Calls method in the injected CompanyService
+      return await this.companyService.verifyEmail(token);
+    } 
+    
+    // ✅ FIXED: Calls the local verifyEmail method using 'this'
+    return await this.verifyEmail(token); 
+  }
+
+  // ✅ Keep this internal for User verification
   async verifyEmail(token: string): Promise<{ message: string }> {
     const user = await this.userModel.findOne({
       emailVerificationToken: token,
@@ -81,7 +95,6 @@ export class AuthService {
     user.emailVerificationExpires = undefined;
     await user.save();
 
-    // Send welcome email
     await this.emailService.sendWelcomeEmail(
       user.email,
       `${user.firstName} ${user.lastName}`,
@@ -93,7 +106,6 @@ export class AuthService {
       message: 'Email verified successfully! You can now login.',
     };
   }
-
   // ✅ NEW: Resend Verification Email
   async resendVerificationEmail(email: string): Promise<{ message: string }> {
     const user = await this.userModel.findOne({ email });
@@ -119,6 +131,7 @@ export class AuthService {
       email,
       verificationToken,
       `${user.firstName} ${user.lastName}`,
+      'user'
     );
 
     console.log('✅ Verification email resent to:', email);

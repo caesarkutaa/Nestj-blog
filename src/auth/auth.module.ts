@@ -8,7 +8,8 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { User, UserSchema } from '../user/schemas/user.schema';
 import { AdminModule } from '../admin/admin.module';
-import { EmailModule } from '../email/email.module'; // ✅ Import EmailModule
+import { EmailModule } from '../email/email.module'; 
+import { CompanyModule } from 'src/company/company.module';
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { EmailModule } from '../email/email.module'; // ✅ Import EmailModule
       { name: User.name, schema: UserSchema },
     ]),
     AdminModule,
-    EmailModule, // ✅ Add EmailModule
+    EmailModule,
+    CompanyModule
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

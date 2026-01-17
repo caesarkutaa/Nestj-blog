@@ -15,11 +15,16 @@ export class AuthController {
   }
 
   // ✅ NEW: Verify Email Endpoint
-  @Public()
-  @Get('verify-email')
-  async verifyEmail(@Query('token') token: string) {
-    return await this.authService.verifyEmail(token);
-  }
+ // auth.controller.ts
+
+@Public()
+@Get('verify-email')
+async verifyEmail(
+  @Query('token') token: string,
+  @Query('type') type: string // Capture 'user' or 'company'
+) {
+  return await this.authService.handleEmailVerification(token, type);
+}
 
   // ✅ NEW: Resend Verification Email
   @Public()

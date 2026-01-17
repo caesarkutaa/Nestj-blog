@@ -25,16 +25,20 @@ import { AdminGuard } from './../auth/admin.guard';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Job } from './schema/job.schema';
+import { User } from 'src/user/schemas/user.schema';
+import { Company } from 'src/company/schema/company.schema';
 
 @Controller('jobs')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class JobController {
   constructor(
+    @InjectModel(Company.name) private companyModel: Model<Company>,
+    @InjectModel(User.name) private userModel: Model<User>,
+      @InjectModel(Job.name) private jobModel: Model<Job>,
     private readonly jobsService: JobService,
-    @InjectModel(Job.name) private jobModel: Model<Job>,
   ) {}
 
-  @Post()
+  @Post()   
   async create(
     @Body() createJobDto: CreateJobDto,
     @Request() req: any,
@@ -90,7 +94,7 @@ export class JobController {
   @Get('categories/stats')
   async getCategoryStats() {
     return await this.jobsService.getCategoryStats();
-  }
+  }   
 
   @Public()
   @Get('source-stats')
@@ -101,7 +105,7 @@ export class JobController {
   @Public()
   @Get('category/:category')
   async findByCategory(
-    @Param('category') category: string,
+    @Param('category') category: string,      
     @Query('page') page?: number,
     @Query('limit') limit?: number,
     @Query('source') source?: 'all' | 'external' | 'user',
@@ -139,7 +143,7 @@ export class JobController {
     @Body() reportJobDto: ReportJobDto,
     @Request() req: any,
   ) {
-    const userId = req.user?.userId || req.user?.sub;
+   const userId = req.user?.userId || req.user?.sub || req.user?.id || req.user?._id;
     
     if (!userId) {
       throw new Error('User ID not found in token');

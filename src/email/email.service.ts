@@ -28,9 +28,8 @@ export class EmailService {
   }
 
   // ✅ Send Email Verification
-  async sendEmailVerification(email: string, verificationToken: string, userName: string) {
-    const verificationUrl = `${this.frontendUrl}/verify-email?token=${verificationToken}`;
-
+  async sendEmailVerification(email: string, verificationToken: string, userName: string , type: 'user' | 'company') {
+   const verificationUrl = `${this.frontendUrl}/verify-email?token=${verificationToken}&type=${type}`;
     try {
       const { data, error } = await this.resend.emails.send({
         from: `${this.fromName} <${this.fromEmail}>`,

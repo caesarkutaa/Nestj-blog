@@ -3,16 +3,24 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Job, JobStatus } from './schema/job.schema';
 import { User, UserRole } from '../user/schemas/user.schema';
+import { Company } from '../company/schema/company.schema';
 import { CreateJobDto, UpdateJobDto, ReportJobDto } from '../job/dto/job.dto';
 import { ApplicationService } from '../application/application.service';
 
 @Injectable()
 export class JobService {
   constructor(
-    @InjectModel(Job.name)
-    private jobModel: Model<Job>,
-    private applicationService: ApplicationService,
-  ) {}
+  @InjectModel(Job.name) 
+  private readonly jobModel: Model<Job>,
+  
+  @InjectModel(User.name) 
+  private readonly userModel: Model<User>,
+  
+  @InjectModel(Company.name) 
+  private readonly companyModel: Model<Company>,
+  
+  private readonly applicationService: ApplicationService,
+) {}
 
   // ✅ Helper function to generate slug from TITLE ONLY
   private generateSlug(title: string): string {
@@ -449,7 +457,44 @@ export class JobService {
       throw new NotFoundException('Job not found');
     }
 
-    // Check if user already reported this job
+    console.log('🔍 Checking if reporter exists - User ID:', userId);
+
+    // ✅ Check if reporter exists in User collection
+    let reporter = await this.userModel.findById(userId);
+    let isCompany = false;
+
+    if (!reporter) {
+      // ✅ If not found in User collection, check Company collection
+      console.log('🔍 Not found in User collection, checking Company collection...');
+      const company = await this.companyModel.findById(userId);
+      
+      if (!company) {
+        throw new NotFoundException('User or Company not found');
+      }
+
+      console.log('✅ Found company:', company.companyName);
+      
+      // Check if company is blocked
+      if (company.isBlocked) {
+        throw new ForbiddenException(
+          `Your account has been blocked. Reason: ${company.blockReason || 'No reason provided'}`
+        );
+      }
+
+      reporter = company as any;
+      isCompany = true;
+    } else {
+      console.log('✅ Found user:', reporter.firstName, reporter.lastName);
+      
+      // Check if user is blocked
+      if (reporter.isBlocked) {
+        throw new ForbiddenException(
+          `Your account has been blocked. Reason: ${reporter.blockReason || 'No reason provided'}`
+        );
+      }
+    }
+
+    // Check if user/company already reported this job
     const alreadyReported = job.reports?.some(
       (report) => report.userId.toString() === userId
     );
@@ -472,7 +517,11 @@ export class JobService {
 
     await job.save();
 
-    console.log(`✅ Job ${jobId} reported by user ${userId}. Reason: ${reportJobDto.reason}`);
+    const reporterName = isCompany 
+      ? (reporter as any).companyName 
+      : `${(reporter as any).firstName} ${(reporter as any).lastName}`;
+
+    console.log(`✅ Job ${jobId} reported by ${isCompany ? 'company' : 'user'} ${reporterName} (${userId}). Reason: ${reportJobDto.reason}`);
 
     const updatedJob = await this.jobModel
       .findById(jobId)
@@ -486,40 +535,106 @@ export class JobService {
     return updatedJob;
   }
 
-  // ✅ Get all reports (includes external job info)
-  async getAllReports(): Promise<any[]> {
-    const jobs = await this.jobModel
-      .find({ 'reports.0': { $exists: true } })
-      .populate('postedBy', '-password')
-      .populate('reports.userId', 'firstName lastName email')
-      .sort({ 'reports.reportedAt': -1 })
-      .exec();
+// ✅ FIXED getAllReports method with proper TypeScript types
+// ✅ COMPLETE FIXED getAllReports - Handles both user and company posted jobs
 
-    const allReports: any[] = [];
-    jobs.forEach((job) => {
-      job.reports.forEach((report: any) => {
-        allReports.push({
-          _id: report._id || new Types.ObjectId(),
-          jobId: job._id,
-          jobTitle: job.title,
-          jobCompany: job.company,
-          jobSlug: job.slug,
-          jobCategory: job.category,
-          isExternal: job.isExternal, // ✅ Include this for context
-          externalSource: job.externalSource,
-          postedBy: job.postedBy,
-          reportedBy: report.userId,
-          reason: report.reason,
-          description: report.description,
-          reportedAt: report.reportedAt,
-          status: report.status,
-        });
+async getAllReports(): Promise<any[]> {
+  const jobs = await this.jobModel
+    .find({ 'reports.0': { $exists: true } })
+    .sort({ 'reports.reportedAt': -1 })
+    .exec();
+
+  const allReports: any[] = [];
+
+  for (const job of jobs) {
+    // ✅ Find who posted this job (could be User or Company)
+    let postedBy: any = null;
+    
+    if (job.postedBy) {
+      // Try User collection first
+      postedBy = await this.userModel
+        .findById(job.postedBy)
+        .select('firstName lastName email profileImage')
+        .exec();
+      
+      // If not found in User, try Company collection
+      if (!postedBy) {
+        const postedByCompany = await this.companyModel
+          .findById(job.postedBy)
+          .select('companyName email logo')
+          .exec();
+        
+        if (postedByCompany) {
+          postedBy = {
+            _id: postedByCompany._id,
+            firstName: postedByCompany.companyName,
+            lastName: '',
+            email: postedByCompany.email,
+            companyName: postedByCompany.companyName,
+            isCompany: true,
+          };
+        }
+      }
+    }
+
+    for (const report of job.reports) {
+      // ✅ Find who reported this job (could be User or Company)
+      const reportedByUser = await this.userModel
+        .findById(report.userId)
+        .select('firstName lastName email profileImage')
+        .exec();
+
+      let reportedByCompany: any = null;
+      if (!reportedByUser) {
+        reportedByCompany = await this.companyModel
+          .findById(report.userId)
+          .select('companyName email logo')
+          .exec();
+      }
+
+      let reportedBy: any = null;
+      if (reportedByUser) {
+        reportedBy = {
+          _id: reportedByUser._id,
+          firstName: reportedByUser.firstName,
+          lastName: reportedByUser.lastName,
+          email: reportedByUser.email,
+          profileImage: reportedByUser.profileImage,
+        };
+      } else if (reportedByCompany) {
+        reportedBy = {
+          _id: reportedByCompany._id,
+          firstName: reportedByCompany.companyName,
+          lastName: '',
+          email: reportedByCompany.email,
+          companyName: reportedByCompany.companyName,
+          isCompany: true,
+        };
+      }
+
+      allReports.push({
+        _id: (report as any)._id || new Types.ObjectId(),
+        jobId: job._id,
+        jobTitle: job.title,
+        jobCompany: job.company,
+        jobSlug: job.slug,
+        jobCategory: job.category,
+        isExternal: job.isExternal,
+        externalSource: job.externalSource,
+        postedBy: postedBy, // ✅ Now includes company info if posted by company
+        reportedBy: reportedBy,
+        reason: report.reason,
+        description: report.description,
+        reportedAt: report.reportedAt,
+        status: report.status,
       });
-    });
-
-    console.log(`📊 Total reports found: ${allReports.length}`);
-    return allReports;
+    }
   }
+
+  console.log(`📊 Total reports found: ${allReports.length}`);
+  return allReports;
+}
+ 
 
   // ✅ Update report status
   async updateReportStatus(

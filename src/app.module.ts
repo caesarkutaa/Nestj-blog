@@ -15,6 +15,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { JobaggregatorService } from './jobaggregator/jobaggregator.service';
 import { JobaggregatorController } from './jobaggregator/jobaggregator.controller';
 import { JobaggregatorModule } from './jobaggregator/jobaggregator.module';
+import { CompanyModule } from './company/company.module';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { JobaggregatorModule } from './jobaggregator/jobaggregator.module';
     ConfigModule.forRoot({ 
       isGlobal: true,
       envFilePath: '.env',
-    }),
+    }),   
      ScheduleModule.forRoot(),
 
     // ✅ MongoDB with better error handling
@@ -77,6 +78,7 @@ import { JobaggregatorModule } from './jobaggregator/jobaggregator.module';
     ReviewsModule,
     EmailModule,
     JobaggregatorModule,
+    CompanyModule,
   ],
   providers: [CacheService],
   exports: [CacheService],
