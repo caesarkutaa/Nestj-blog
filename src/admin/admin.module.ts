@@ -9,6 +9,7 @@ import { Job, JobSchema } from '../job/schema/job.schema';
 import { jwtConstants } from '../auth/constants';
 import {Company, CompanySchema} from '../company/schema/company.schema';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
+import { Application,ApplicationSchema } from '../application/schema/application.schema';
 
 
 @Module({
@@ -17,7 +18,8 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
       { name: Admin.name, schema: AdminSchema },
       { name: User.name, schema: UserSchema },
       { name: Job.name, schema: JobSchema },
-      { name: Company.name, schema: CompanySchema }
+      { name: Company.name, schema: CompanySchema },
+      { name: Application.name, schema: ApplicationSchema }
     ]),
     JwtModule.register({
       secret: jwtConstants.secret,

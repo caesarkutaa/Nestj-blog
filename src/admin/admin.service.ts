@@ -10,6 +10,7 @@ import { Job } from 'src/job/schema/job.schema';
 import { UpdateAdminProfileDto, ChangeAdminPasswordDto } from './dto/update-admin-profile.dto';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { Company } from '../company/schema/company.schema'; // Adjust path to your actual schema
+import { Application } from 'src/application/schema/application.schema';
 
 @Injectable()
 export class AdminService {
@@ -18,6 +19,7 @@ export class AdminService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Job.name) private jobModel: Model<Job>,
     @InjectModel(Company.name) private companyModel: Model<Company>,
+    @InjectModel(Application.name) private applicationModel: Model<Application>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private cloudinaryService: CloudinaryService,
@@ -330,7 +332,9 @@ async getAllCompanies(): Promise<Company[]> {
  // ✅ CORRECT Delete Company Method for your Job Schema
 // Replace your deleteCompany method in admin.service.ts with this:
 
-async deleteCompany(adminId: string, companyId: string): Promise<{ message: string; deletedJobs: number }> {
+// ✅ ENHANCED DEBUG VERSION - This will show us EXACTLY what's happening
+
+async deleteCompany(adminId: string, companyId: string): Promise<{ message: string; deletedJobs: number; deletedApplications: number }> {
   console.log('=== DELETE COMPANY SERVICE ===');
   console.log('Admin ID:', adminId);
   console.log('Company ID:', companyId);
@@ -349,9 +353,8 @@ async deleteCompany(adminId: string, companyId: string): Promise<{ message: stri
     throw new BadRequestException('Invalid company ID format');
   }
 
-  // 3. Find the company in the Company collection
+  // 3. Find the company
   console.log('🔍 Looking for company with ID:', companyId);
-  
   const company = await this.companyModel.findById(companyId);
   
   if (!company) {
@@ -363,42 +366,60 @@ async deleteCompany(adminId: string, companyId: string): Promise<{ message: stri
     id: company._id,
     name: company.companyName,
     email: company.email,
+    jobsArray: company.jobs,
+    totalJobs: company.jobs?.length || 0,
   });
 
   try {
-    // 4. Delete jobs posted by this company
-    // Your Job schema has TWO fields that can reference companies:
-    // - postedBy: References User collection
-    // - postedByCompany: References Company collection
+    // 4. Get job IDs directly from company.jobs array
+    const jobIds = company.jobs || [];
+    console.log(`📋 Company has ${jobIds.length} job(s) in jobs array:`, jobIds);
     
-    console.log('🔍 Searching for jobs posted by company...');
+    let deletedApplications = 0;
+    let deletedJobs = 0;
     
-    // Method 1: Delete jobs where postedByCompany = companyId
-    const result1 = await this.jobModel.deleteMany({ postedByCompany: companyId });
-    console.log(`🗑️ Deleted ${result1.deletedCount} jobs via postedByCompany field`);
+    if (jobIds.length > 0) {
+      // 5. Delete applications for these jobs FIRST
+      console.log('🗑️ Deleting applications for these jobs...');
+      const appResult = await this.applicationModel.deleteMany({
+        job: { $in: jobIds }
+      });
+      deletedApplications = appResult.deletedCount;
+      console.log(`✅ Deleted ${deletedApplications} applications`);
+      
+      // 6. Delete the jobs
+      console.log('🗑️ Deleting jobs...');
+      const jobResult = await this.jobModel.deleteMany({
+        _id: { $in: jobIds }
+      });
+      deletedJobs = jobResult.deletedCount;
+      console.log(`✅ Deleted ${deletedJobs} jobs`);
+      
+      // Log which jobs were actually deleted
+      if (deletedJobs < jobIds.length) {
+        console.warn(`⚠️ Warning: Expected to delete ${jobIds.length} jobs but only deleted ${deletedJobs}`);
+      }
+    } else {
+      console.log('ℹ️ No jobs to delete for this company');
+    }
     
-    // Method 2: Delete jobs where postedBy = companyId (in case company is also in User collection)
-    const result2 = await this.jobModel.deleteMany({ postedBy: companyId });
-    console.log(`🗑️ Deleted ${result2.deletedCount} jobs via postedBy field`);
-    
-    const totalDeleted = result1.deletedCount + result2.deletedCount;
-    console.log(`✅ Total jobs deleted: ${totalDeleted}`);
-    
-    // 5. Delete the company
+    // 7. Delete the company
     console.log('🗑️ Deleting company...');
     await this.companyModel.findByIdAndDelete(companyId);
     console.log('✅ Company deleted');
     
-    const message = `Company "${company.companyName}" and ${totalDeleted} associated jobs deleted successfully`;
+    const message = `Company "${company.companyName}" deleted successfully (${deletedJobs} jobs, ${deletedApplications} applications removed)`;
     console.log('✅ SUCCESS:', message);
     
     return { 
       message,
-      deletedJobs: totalDeleted 
+      deletedJobs,
+      deletedApplications
     };
     
   } catch (error) {
     console.error('❌ Database Delete Error:', error);
+    console.error('Error stack:', error.stack);
     throw new InternalServerErrorException('Failed to delete company data');
   }
 }
