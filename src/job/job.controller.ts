@@ -120,6 +120,31 @@ export class JobController {
     });
   }
 
+  @Public()
+  @Get('user/:userId/jobs')
+  async findJobsByUserId(@Param('userId') userId: string) {
+    console.log('👤 Fetching jobs for user:', userId);
+    
+    const jobs = await this.jobsService.findJobsByUserId(userId);
+    console.log('📋 Returned jobs:', jobs.length);
+    
+    return jobs;
+  }
+
+@Public()
+  @Get('company/:companyId/jobs')
+  async findJobsByCompany(@Param('companyId') companyId: string) {
+    console.log('🏢 Fetching jobs for company:', companyId);
+    
+    const jobs = await this.jobsService.findJobsByCompany(companyId);
+    console.log('📋 Returned jobs:', jobs.length);
+    
+    return jobs;
+  }
+
+
+
+
   @Get('user/my-jobs')
   async findUserJobs(@Request() req: any) {
     console.log('👤 Full request user object:', JSON.stringify(req.user, null, 2));

@@ -257,6 +257,84 @@ export class JobService {
     return jobs;
   }
 
+async findJobsByUserId(userId: string): Promise<Job[]> {
+    console.log('🔎 JobService.findJobsByUserId called');
+    console.log('🔎 userId parameter:', userId);
+    
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new NotFoundException('Invalid user ID');
+    }
+    
+    const userObjectId = new Types.ObjectId(userId);
+    console.log('🔎 Converted to ObjectId:', userObjectId);
+    
+    const jobs = await this.jobModel
+      .find({ 
+        postedBy: userObjectId,
+        status: 'active' // Only show active jobs publicly
+      })
+      .populate('postedBy', '-password')
+      .populate({
+        path: 'reviews',
+        populate: {
+          path: 'user',
+          select: 'firstName lastName profileImage',
+        },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+    
+    console.log('✅ Query result - jobs found:', jobs.length);
+    
+    return jobs;
+  }
+
+// ✅ REPLACE the findJobsByCompany method in job.service.ts with this:
+
+async findJobsByCompany(companyId: string): Promise<Job[]> {
+    console.log('🔎 JobService.findJobsByCompany called');
+    console.log('🔎 companyId parameter:', companyId);
+    console.log('🔎 companyId type:', typeof companyId);
+    
+    if (!Types.ObjectId.isValid(companyId)) {
+      throw new NotFoundException('Invalid company ID');
+    }
+    
+    const companyObjectId = new Types.ObjectId(companyId);
+    console.log('🔎 Converted to ObjectId:', companyObjectId);
+    
+    
+    const jobs = await this.jobModel
+      .find({ 
+        postedByCompany: companyObjectId
+        
+      })
+      .populate('postedByCompany', '-password')
+      .populate({
+        path: 'reviews',
+        populate: {
+          path: 'user',
+          select: 'firstName lastName profileImage',
+        },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+    
+    console.log('✅ Query result - jobs found:', jobs.length);
+    
+    if (jobs.length > 0) {
+      console.log('📋 Jobs found:', jobs.map(j => ({
+        id: j._id,
+        title: j.title,
+        status: j.status,
+        company: j.company,
+      })));
+    }
+    
+    return jobs;
+  }
+
+  
   async update(id: string, updateJobDto: UpdateJobDto, user: any): Promise<Job> {
     const job: any = await this.findOne(id);
 

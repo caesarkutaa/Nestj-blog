@@ -443,7 +443,7 @@ async unblockCompany(companyId: string): Promise<any> {
   if (!company) throw new NotFoundException('Company not found');
 
   company.isBlocked = false;
-  company.blockedAt = undefined;
+  company.blockedAt = undefined;  
   company.blockReason = undefined;
 
   await company.save();

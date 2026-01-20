@@ -28,70 +28,65 @@ export class EmailService {
   }
 
   // ✅ Send Email Verification
-  async sendEmailVerification(email: string, verificationToken: string, userName: string , type: 'user' | 'company') {
-   const verificationUrl = `${this.frontendUrl}/verify-email?token=${verificationToken}&type=${type}`;
-    try {
-      const { data, error } = await this.resend.emails.send({
-        from: `${this.fromName} <${this.fromEmail}>`,
-        to: [email],
-        subject: 'Verify Your Email - Krevv Job Platform',
-        html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-              .header h1 { color: white; margin: 0; font-size: 28px; }
-              .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
-              .button { display: inline-block; padding: 15px 30px; background: #f59e0b; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 20px 0; }
-              .button:hover { background: #d97706; }
-              .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>Welcome to Krevv! 🎉</h1>
-              </div>
-              <div class="content">
-                <h2 style="color: #1f2937; margin-top: 0;">Hi ${userName},</h2>
-                <p>Thank you for registering with Krevv Job Platform! We're excited to have you on board.</p>
-                <p>To complete your registration and start exploring job opportunities, please verify your email address by clicking the button below:</p>
-                <div style="text-align: center;">
-                  <a href="${verificationUrl}" class="button">Verify Email Address</a>
-                </div>
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #f59e0b; background: #fff; padding: 10px; border-radius: 5px;">${verificationUrl}</p>
-                <p><strong>⏰ This link will expire in 24 hours.</strong></p>
-                <p style="color: #9ca3af; font-size: 14px;">If you didn't create an account with Krevv, please ignore this email.</p>
-                <p style="margin-top: 30px;">Best regards,<br><strong>The Krevv Team</strong></p>
-              </div>
-              <div class="footer">
-                <p>&copy; ${new Date().getFullYear()} Krevv Job Platform. All rights reserved.</p>
-                <p style="margin-top: 5px;">Made with ❤️ in Nigeria</p>
-              </div>
+  async sendEmailVerification(email: string, verificationToken: string, userName: string, type: 'user' | 'company') {
+  // ✅ 1. Encode parameters to prevent broken links
+  const encodedToken = encodeURIComponent(verificationToken);
+  const encodedType = encodeURIComponent(type);
+  const verificationUrl = `${this.frontendUrl}/verify-email?token=${encodedToken}&type=${encodedType}`;
+
+  try {
+    const { data, error } = await this.resend.emails.send({
+      from: `${this.fromName} <${this.fromEmail}>`,
+      to: [email],
+      subject: 'Verify Your Email - Krevv Job Platform',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            /* Keep styles for clients that support them */
+            .button { display: inline-block; padding: 15px 30px; background-color: #f59e0b; color: #ffffff !important; text-decoration: none; border-radius: 5px; font-weight: bold; }
+          </style>
+        </head>
+        <body style="font-family: Arial, sans-serif; margin: 0; padding: 0;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: #f59e0b; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+              <h1 style="color: white; margin: 0;">Welcome to Krevv! 🎉</h1>
             </div>
-          </body>
-          </html>
-        `,
-      });
+            <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #eeeeee;">
+              <h2 style="color: #1f2937;">Hi ${userName},</h2>
+              <p>Please verify your email address to activate your ${type} account:</p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verificationUrl}" 
+                   style="background-color: #f59e0b; color: #ffffff !important; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                   Verify Email Address
+                </a>
+              </div>
 
-      if (error) {
-        console.error('❌ Resend error:', error);
-        throw new Error(`Failed to send verification email: ${error.message}`);
-      }
+              <p>Or copy and paste this link:</p>
+              <p style="word-break: break-all; background: #ffffff; padding: 10px; border-radius: 5px; border: 1px solid #dddddd;">
+                <a href="${verificationUrl}" style="color: #f59e0b; text-decoration: none;">${verificationUrl}</a>
+              </p>
+              
+              <p style="color: #9ca3af; font-size: 12px; margin-top: 30px;">
+                Best regards,<br>The Krevv Team
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    });
 
-      console.log(`✅ Verification email sent to ${email} (ID: ${data?.id})`);
-      return { success: true, data };
-    } catch (error) {
-      console.error('❌ Error sending verification email:', error);
-      throw error;
-    }
+    if (error) throw new Error(error.message);
+    return { success: true, data };
+  } catch (error) {
+    console.error('❌ Error:', error);
+    throw error;
   }
+}
 
   // ✅ Send Password Reset Email
   async sendPasswordResetEmail(email: string, resetToken: string, userName: string) {

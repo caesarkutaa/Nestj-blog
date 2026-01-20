@@ -290,22 +290,6 @@ export class CreateJobDto {
   @IsOptional()
   responsibilities?: string[];
 
-  @IsEmail()
-  @IsOptional()
-  applicationEmail?: string;
-
-  @IsString()
-  @IsOptional()
-  applicationUrl?: string;
-
-  @IsDateString()
-  @IsOptional()
-  deadline?: string;
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  tags?: string[];
 }
 
 // =============================================
