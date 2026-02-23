@@ -117,6 +117,8 @@ export class RegisterCompanyDto {
   @IsOptional()
   contactPersonPhone?: string;
 
+
+
   @IsNumber()
   @IsOptional()
   @Type(() => Number)
@@ -236,6 +238,14 @@ export class UpdateCompanyDto {
   @IsString()
   @IsOptional()
   contactPersonPhone?: string;
+  
+  @IsEmail()
+  @IsOptional()
+  paypalEmail?: string;
+
+  @IsOptional()
+  paypalVerified?: boolean;
+
 }
 
 // =============================================

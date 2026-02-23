@@ -52,6 +52,13 @@ export class User extends Document {
   @Prop()
   location?: string;
 
+
+ @Prop()
+  paypalEmail?: string;
+
+  @Prop({ default: false })
+  paypalVerified?: boolean;
+
   @Prop({ type: String, enum: UserRole, default: UserRole.USER })
   role: UserRole;
 

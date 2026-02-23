@@ -30,6 +30,7 @@ export class SignUpDto {
   @IsOptional()
   @IsEnum(UserRole)
   role?: UserRole;
+
 }
 
 export class LoginDto {
@@ -64,7 +65,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   profileImage?: string;
+
+  @IsString()
+  @IsOptional()
+  paypalEmail?: string;
+
 }
+
 
 // ✅ NEW DTOs for Email & Password Reset
 export class ForgotPasswordDto {

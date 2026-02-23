@@ -162,14 +162,14 @@ async getPublicProfile(@Param('id') id: string) {
   }
 
   
-  // ✅ FIXED: Delete User Endpoint with proper adminId extraction
-@Delete('users/:userId')  // ✅ Remove '/delete' to match frontend
+  // Delete User Endpoint with proper adminId extraction
+@Delete('users/:userId')  
 @UseGuards(JwtAuthGuard, AdminGuard)
 async deleteUser(
   @Param('userId') userId: string,
-  @Request() req,  // ✅ Add Request decorator to access JWT payload
+  @Request() req, 
 ) {
-  const adminId = req.user.sub || req.user.userId;  // ✅ Extract adminId from JWT
+  const adminId = req.user.sub || req.user.userId;  
   console.log('🔑 Admin ID:', adminId);
   console.log('🗑️ Deleting user ID:', userId);
   
@@ -205,4 +205,67 @@ async block(@Param('id') id: string, @Body('reason') reason: string) {
 async unblock(@Param('id') id: string) {
   return await this.adminService.unblockCompany(id);
 }
+
+// ✅ Get All Marketplace Orders
+@Get('marketplace/orders')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getAllMarketplaceOrders() {
+  return this.adminService.getAllMarketplaceOrders();
+}
+
+// ✅ Get Marketplace Order by ID
+@Get('marketplace/orders/:orderId')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getMarketplaceOrderById(@Param('orderId') orderId: string) {
+  return this.adminService.getMarketplaceOrderById(orderId);
+}
+
+// ✅ Get All Marketplace Services
+@Get('marketplace/services')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getAllMarketplaceServices() {
+  return this.adminService.getAllMarketplaceServices();
+}
+
+// ✅ Delete Marketplace Order
+@Delete('marketplace/orders/:orderId')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async deleteMarketplaceOrder(
+  @Request()  req: any,
+  @Param('orderId') orderId: string,
+) {
+   const adminId = req.user.sub || req.user.userId;
+  return this.adminService.deleteMarketplaceOrder(adminId, orderId);
+}
+
+// ✅ Delete Marketplace Service
+@Delete('marketplace/services/:serviceId')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async deleteMarketplaceService(
+  @Request()  req: any,
+  @Param('serviceId') serviceId: string,
+) {
+     const adminId = req.user.sub || req.user.userId;
+  return this.adminService.deleteMarketplaceService(adminId, serviceId);
+}
+
+// ✅ Update Order Status
+@Patch('marketplace/orders/:orderId/status')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async updateOrderStatus(
+  @Request() req: any,
+  @Param('orderId') orderId: string,
+  @Body() body: { status: string },
+) {
+     const adminId = req.user.sub || req.user.userId;
+  return this.adminService.updateOrderStatus(adminId, orderId, body.status);
+}
+
+// ✅ Get Marketplace Dashboard Stats
+@Get('marketplace/stats')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getMarketplaceDashboardStats() {
+  return this.adminService.getMarketplaceDashboardStats();
+}
+
 }

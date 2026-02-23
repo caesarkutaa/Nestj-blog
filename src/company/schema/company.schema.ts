@@ -60,14 +60,20 @@ export class Company extends Document {
   @Prop({ required: true })
   industry: string;
 
+     @Prop()
+    paypalEmail?: string;
+  
+    @Prop({ default: false })
+    paypalVerified?: boolean;
+
   @Prop({ enum: Object.values(CompanySize) })
   companySize?: string;
 
-  @Prop()
+  @Prop()     
   foundedYear?: number;
 
   @Prop()
-  description?: string;
+  description?: string;      
 
   @Prop()
   shortDescription?: string;

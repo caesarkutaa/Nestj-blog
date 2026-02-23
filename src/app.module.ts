@@ -16,6 +16,9 @@ import { JobaggregatorService } from './jobaggregator/jobaggregator.service';
 import { JobaggregatorController } from './jobaggregator/jobaggregator.controller';
 import { JobaggregatorModule } from './jobaggregator/jobaggregator.module';
 import { CompanyModule } from './company/company.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
+import { NotificationsController } from './notifications/notifications.controller';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -79,9 +82,12 @@ import { CompanyModule } from './company/company.module';
     EmailModule,
     JobaggregatorModule,
     CompanyModule,
+    MarketplaceModule,
+    NotificationsModule,
   ],
   providers: [CacheService],
   exports: [CacheService],
+  controllers: [NotificationsController],
   
 })
 export class AppModule {}

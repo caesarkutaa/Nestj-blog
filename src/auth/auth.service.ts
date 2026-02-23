@@ -282,6 +282,8 @@ export class AuthService {
       role: user.role,
       firstName: user.firstName,
       lastName: user.lastName,
+      paypalEmail: user.paypalEmail,
+      companyName: user.companyName || null
     };
     
   

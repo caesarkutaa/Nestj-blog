@@ -66,6 +66,7 @@ async function bootstrap() {
     console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? '✅ Set' : '❌ Missing'}`);
     console.log(`📧 Email: ${process.env.EMAIL_USER ? '✅ Configured' : '❌ Missing'}`);
     console.log(`🔗 Access: http://localhost:${PORT}`);
+     console.log(`🔌 WebSocket available at: ws://localhost:${PORT}/marketplace-chat`);
     console.log('========================================');
 
   } catch (error) {

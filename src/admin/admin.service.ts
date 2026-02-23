@@ -9,8 +9,11 @@ import { User } from 'src/user/schemas/user.schema';
 import { Job } from 'src/job/schema/job.schema';
 import { UpdateAdminProfileDto, ChangeAdminPasswordDto } from './dto/update-admin-profile.dto';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { Company } from '../company/schema/company.schema'; // Adjust path to your actual schema
+import { Company } from '../company/schema/company.schema';
 import { Application } from 'src/application/schema/application.schema';
+import { CustomOrder } from '../marketplace/schema/custom-order.schema'; 
+import { ServiceTask } from '../marketplace/schema/service.schema'; 
+
 
 @Injectable()
 export class AdminService {
@@ -20,6 +23,8 @@ export class AdminService {
     @InjectModel(Job.name) private jobModel: Model<Job>,
     @InjectModel(Company.name) private companyModel: Model<Company>,
     @InjectModel(Application.name) private applicationModel: Model<Application>,
+    @InjectModel(CustomOrder.name) private orderModel: Model<CustomOrder>,
+   @InjectModel(ServiceTask.name) private serviceModel: Model<ServiceTask>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private cloudinaryService: CloudinaryService,
@@ -329,10 +334,6 @@ async getAllCompanies(): Promise<Company[]> {
       .exec();
   }
 
- // ✅ CORRECT Delete Company Method for your Job Schema
-// Replace your deleteCompany method in admin.service.ts with this:
-
-// ✅ ENHANCED DEBUG VERSION - This will show us EXACTLY what's happening
 
 async deleteCompany(adminId: string, companyId: string): Promise<{ message: string; deletedJobs: number; deletedApplications: number }> {
   console.log('=== DELETE COMPANY SERVICE ===');
@@ -448,6 +449,249 @@ async unblockCompany(companyId: string): Promise<any> {
 
   await company.save();
   return { message: 'Company unblocked successfully', company };
+}
+
+// ✅ Get All Marketplace Orders (Admin view)
+async getAllMarketplaceOrders(): Promise<any> {
+  try {
+    const orders = await this.orderModel
+      .find()
+      .populate({
+        path: 'serviceId',
+        select: 'title category budget status clientId',
+        populate: {
+          path: 'clientId',
+          select: 'firstName lastName email companyName',
+        }
+      })
+      .populate('clientId', 'firstName lastName email companyName')
+      .populate('developerId', 'firstName lastName email companyName')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    // Calculate statistics
+    const stats = {
+      totalOrders: orders.length,
+      paidOrders: orders.filter(o => ['paid', 'in_progress', 'delivered', 'completed'].includes(o.status)).length,
+      pendingPayment: orders.filter(o => o.status === 'pending_payment').length,
+      inProgress: orders.filter(o => o.status === 'in_progress').length,
+      delivered: orders.filter(o => o.status === 'delivered').length,
+      completed: orders.filter(o => o.status === 'completed').length,
+      cancelled: orders.filter(o => o.status === 'cancelled').length,
+      totalRevenue: orders
+        .filter(o => ['paid', 'in_progress', 'delivered', 'completed'].includes(o.status))
+        .reduce((sum, o) => sum + (o.totalAmount || 0), 0),
+      platformFees: orders
+        .filter(o => ['paid', 'in_progress', 'delivered', 'completed'].includes(o.status))
+        .reduce((sum, o) => sum + (o.platformFee || 0), 0),
+    };
+
+    return { orders, stats };
+  } catch (error) {
+    console.error('Error fetching marketplace orders:', error);
+    throw new InternalServerErrorException('Failed to fetch marketplace orders');
+  }
+}
+
+// ✅ Get Marketplace Order by ID
+async getMarketplaceOrderById(orderId: string): Promise<any> {
+  const order = await this.orderModel
+    .findById(orderId)
+    .populate({
+      path: 'serviceId',
+      select: 'title category budget status clientId',
+      populate: {
+        path: 'clientId',
+        select: 'firstName lastName email companyName phone',
+      }
+    })
+    .populate('clientId', 'firstName lastName email companyName phone')
+    .populate('developerId', 'firstName lastName email companyName phone')
+    .exec();
+
+  if (!order) {
+    throw new NotFoundException('Order not found');
+  }
+
+  return order;
+}
+
+// ✅ Get All Marketplace Services (Admin view)
+async getAllMarketplaceServices(): Promise<any> {
+  try {
+    const services = await this.serviceModel
+      .find()
+      .populate('clientId', 'firstName lastName email companyName')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    // Get order counts for each service
+    const servicesWithStats = await Promise.all(
+      services.map(async (service) => {
+        const orders = await this.orderModel
+          .find({ serviceId: service._id })
+          .exec();
+
+        const paidOrders = orders.filter(o => 
+          ['paid', 'in_progress', 'delivered', 'completed'].includes(o.status)
+        );
+
+        return {
+          ...service.toObject(),
+          totalOrders: orders.length,
+          paidOrders: paidOrders.length,
+          totalRevenue: paidOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0),
+        };
+      })
+    );
+
+    const stats = {
+      totalServices: services.length,
+      openServices: services.filter(s => s.status === 'open').length,
+      inProgress: services.filter(s => s.status === 'in_progress').length,
+      completed: services.filter(s => s.status === 'completed').length,
+      totalBudget: services.reduce((sum, s) => sum + (s.budget || 0), 0),
+    };
+
+    return { services: servicesWithStats, stats };
+  } catch (error) {
+    console.error('Error fetching marketplace services:', error);
+    throw new InternalServerErrorException('Failed to fetch marketplace services');
+  }
+}
+
+// ✅ Delete Marketplace Order (Admin power)
+async deleteMarketplaceOrder(
+  adminId: string,
+  orderId: string
+): Promise<{ message: string }> {
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) {
+    throw new NotFoundException('Admin not found');
+  }
+
+  const order = await this.orderModel.findById(orderId);
+  if (!order) {
+    throw new NotFoundException('Order not found');
+  }
+
+  await this.orderModel.findByIdAndDelete(orderId);
+
+  console.log(`✅ Order ${orderId} deleted by admin ${admin.username}`);
+
+  return { message: 'Order deleted successfully' };
+}
+
+// ✅ Delete Marketplace Service (Admin power)
+async deleteMarketplaceService(
+  adminId: string,
+  serviceId: string
+): Promise<{ message: string; deletedOrders: number }> {
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) {
+    throw new NotFoundException('Admin not found');
+  }
+
+  const service = await this.serviceModel.findById(serviceId);
+  if (!service) {
+    throw new NotFoundException('Service not found');
+  }
+
+  // Delete all orders for this service
+  const deletedOrders = await this.orderModel.deleteMany({ serviceId });
+
+  // Delete the service
+  await this.serviceModel.findByIdAndDelete(serviceId);
+
+  console.log(`✅ Service ${serviceId} and ${deletedOrders.deletedCount} orders deleted by admin ${admin.username}`);
+
+  return {
+    message: 'Service deleted successfully',
+    deletedOrders: deletedOrders.deletedCount,
+  };
+}
+
+// ✅ Update Order Status (Admin power)
+async updateOrderStatus(
+  adminId: string,
+  orderId: string,
+  status: string
+): Promise<any> {
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) {
+    throw new NotFoundException('Admin not found');
+  }
+
+  const order = await this.orderModel.findById(orderId);
+  if (!order) {
+    throw new NotFoundException('Order not found');
+  }
+
+  const validStatuses = ['pending_payment', 'paid', 'in_progress', 'delivered', 'completed', 'cancelled'];
+  if (!validStatuses.includes(status)) {
+    throw new BadRequestException('Invalid order status');
+  }
+
+  order.status = status as any;
+  
+  if (status === 'completed') {
+    order.completedAt = new Date();
+  }
+
+  await order.save();
+
+  console.log(`✅ Order ${orderId} status updated to ${status} by admin ${admin.username}`);
+
+  return await this.getMarketplaceOrderById(orderId);
+}
+
+// ✅ Get Marketplace Dashboard Stats
+async getMarketplaceDashboardStats(): Promise<any> {
+  try {
+    const [orders, services] = await Promise.all([
+      this.orderModel.find().exec(),
+      this.serviceModel.find().exec(),
+    ]);
+
+    const paidOrders = orders.filter(o => 
+      ['paid', 'in_progress', 'delivered', 'completed'].includes(o.status)
+    );
+
+    const last30Days = new Date();
+    last30Days.setDate(last30Days.getDate() - 30);
+
+    const recentOrders = paidOrders.filter(o => 
+      o.paidAt && new Date(o.paidAt) > last30Days
+    );
+
+    return {
+      orders: {
+        total: orders.length,
+        paid: paidOrders.length,
+        pending: orders.filter(o => o.status === 'pending_payment').length,
+        inProgress: orders.filter(o => o.status === 'in_progress').length,
+        delivered: orders.filter(o => o.status === 'delivered').length,
+        completed: orders.filter(o => o.status === 'completed').length,
+        cancelled: orders.filter(o => o.status === 'cancelled').length,
+        last30Days: recentOrders.length,
+      },
+      revenue: {
+        total: paidOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0),
+        platformFees: paidOrders.reduce((sum, o) => sum + (o.platformFee || 0), 0),
+        developerPayouts: paidOrders.reduce((sum, o) => sum + (o.price || 0), 0),
+        last30Days: recentOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0),
+      },
+      services: {
+        total: services.length,
+        open: services.filter(s => s.status === 'open').length,
+        inProgress: services.filter(s => s.status === 'in_progress').length,
+        completed: services.filter(s => s.status === 'completed').length,
+      },
+    };
+  } catch (error) {
+    console.error('Error fetching marketplace dashboard stats:', error);
+    throw new InternalServerErrorException('Failed to fetch marketplace stats');
+  }
 }
 
 }

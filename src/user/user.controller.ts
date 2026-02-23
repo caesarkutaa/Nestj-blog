@@ -17,14 +17,18 @@ import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 export class UserController {
   constructor(private readonly usersService: UserService) {}
 
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  async getProfile(@CurrentUser() user: any) {
-    console.log('✅ GET /users/me - User from JWT:', user);
-    
-    // ✅ Return the user object directly (already populated from JWT strategy)
-    return user;
-  }
+@Get('me')
+@UseGuards(JwtAuthGuard)
+async getProfile(@CurrentUser() user: any) {
+  // 'user' here comes from the JWT (Passport Strategy)
+  // Use the ID from the token to get fresh data from the DB
+  const userId = user.userId || user.sub || user._id;
+  
+  const freshUser = await this.usersService.findOne(userId);
+  
+  console.log('✅ GET /users/me - Fresh Data from DB:', freshUser.paypalEmail);
+  return freshUser;
+}
 
   @Patch('me')
   @UseGuards(JwtAuthGuard)

@@ -10,6 +10,9 @@ import { jwtConstants } from '../auth/constants';
 import {Company, CompanySchema} from '../company/schema/company.schema';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { Application,ApplicationSchema } from '../application/schema/application.schema';
+import { CustomOrder,  CustomOrderSchema } from '../marketplace/schema/custom-order.schema';
+import { ServiceTask, ServiceTaskSchema } from '../marketplace/schema/service.schema';
+
 
 
 @Module({
@@ -19,7 +22,10 @@ import { Application,ApplicationSchema } from '../application/schema/application
       { name: User.name, schema: UserSchema },
       { name: Job.name, schema: JobSchema },
       { name: Company.name, schema: CompanySchema },
-      { name: Application.name, schema: ApplicationSchema }
+      { name: Application.name, schema: ApplicationSchema },
+      { name: CustomOrder.name, schema: CustomOrderSchema },
+      { name: ServiceTask.name, schema: ServiceTaskSchema }
+      
     ]),
     JwtModule.register({
       secret: jwtConstants.secret,

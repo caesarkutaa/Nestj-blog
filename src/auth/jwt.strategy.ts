@@ -80,8 +80,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: payload.role || 'admin',
         firstName: payload.firstName || null,
         lastName: payload.lastName || null,
-        isAdmin: true 
+        isAdmin: true ,
       };
+
       
       console.log('🔄 Returning admin user object:', adminUser);
       return adminUser;
@@ -130,6 +131,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         phone: user.phone || null,
         location: user.location || null,
         bio: user.bio || null,
+        paypalEmail: user.paypalEmail || null,
+          companyName: payload.companyName || null,
         isAdmin: false 
       };
       

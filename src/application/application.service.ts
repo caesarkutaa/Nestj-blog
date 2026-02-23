@@ -110,54 +110,31 @@ export class ApplicationService {
     return validApplications;
   }
 
-  async findJobApplications(jobId: string, user: any): Promise<Application[]> {
-    console.log('🔎 Finding applications for job:', jobId);
-    console.log('🔎 Requested by user:', user._id);
-    
-    if (!Types.ObjectId.isValid(jobId)) {
-      throw new NotFoundException('Invalid job ID');
-    }
+ async findJobApplications(jobId: string, user: any): Promise<Application[]> {
+  const targetJobId = new Types.ObjectId(jobId); 
 
-    const job = await this.jobModel.findById(jobId).populate('postedBy');
+  const job = await this.jobModel.findById(targetJobId).populate('postedBy');
+  if (!job) throw new NotFoundException('Job not found');
 
-    if (!job) {
-      throw new NotFoundException('Job not found');
-    }
+  // Ownership check
+  const postedById = (job.postedBy as any)?._id?.toString();
+  const requesterId = user._id?.toString();
 
-    // Check if user is admin or job owner
-    const postedBy = job.postedBy as any;
-    const isAdmin = user.isAdmin;
-    const isOwner = postedBy?._id?.toString() === user._id?.toString();
-
-   
-
-    if (!isAdmin && !isOwner && user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('You can only view applications for your own jobs');
-    }
-
-    const applications = await this.applicationModel
-      .find({ job: jobId })
-      .populate('user', '-password')
-      .populate({
-        path: 'job',
-        select: 'title company location type',
-      })
-      .sort({ appliedAt: -1 })
-      .exec();
-
-    // ✅ Filter out applications with null users
-    const validApplications = applications.filter(app => {
-      if (!app.user) {
-        console.log(`⚠️ Application ${app._id} has deleted user - filtering out`);
-        return false;
-      }
-      return true;
-    });
-
-    console.log(`📊 Found applications - total: ${applications.length}, valid: ${validApplications.length}`);
-
-    return validApplications;
+  if (postedById !== requesterId && !user.isAdmin) {
+    throw new ForbiddenException('Access denied');
   }
+
+  const applications = await this.applicationModel
+    .find({ job: targetJobId }) // Use the casted ID
+    .populate('user') 
+    .exec();
+
+  console.log(`Debug: Found ${applications.length} total docs for job ${jobId}`);
+  
+  
+  return applications.filter(app => app.user !== null);
+}
+
 
   async findOne(id: string): Promise<Application> {
     if (!Types.ObjectId.isValid(id)) {
@@ -184,15 +161,19 @@ export class ApplicationService {
   }
 
   async checkIfApplied(jobId: string, userId: string): Promise<{ applied: boolean }> {
-    const userObjectId = new Types.ObjectId(userId);
-    
-    const application = await this.applicationModel.findOne({
-      user: userObjectId,
-      job: jobId,
-    });
+  // Log all applications by this user to see the structure
+  const allUserApps = await this.applicationModel.find({ 
+    $or: [{ user: userId }, { userId: userId }] 
+  }).lean();
 
-    return { applied: !!application };
-  }
+
+  const application = await this.applicationModel.findOne({
+    user: new Types.ObjectId(userId),
+    job: new Types.ObjectId(jobId),
+  });
+
+  return { applied: !!application };
+}
 
   async updateStatus(
     id: string,

@@ -62,7 +62,7 @@ export class ApplicationController {
   }
       
   @Get('job/:jobId')
-  async findJobApplications(
+  async findJobApplications(    
     @Param('jobId') jobId: string,
     @Request() req: any,
   ) {
