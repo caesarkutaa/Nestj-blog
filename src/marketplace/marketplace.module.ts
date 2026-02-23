@@ -9,7 +9,7 @@ import { PayPalService } from '../payment/paypal.service';
 import { ServiceMessage, ServiceMessageSchema } from './schema/message.schema';
 import { ChatGateway } from './chat.gateway';
 import { CustomOrder, CustomOrderSchema } from './schema/custom-order.schema';
-import { OrderMessageSchema } from './schema/order-message.schema';
+import { OrderMessage, OrderMessageSchema } from './schema/order-message.schema';
 import { Company, CompanySchema } from '../company/schema/company.schema';
 import { User, UserSchema } from '../user/schemas/user.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
