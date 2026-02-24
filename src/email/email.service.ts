@@ -162,6 +162,83 @@ export class EmailService {
     }
   }
 
+
+  async sendCompanyPasswordResetEmail(email: string, resetToken: string, userName: string) {
+    const resetUrl = `${this.frontendUrl}/company/reset-password?token=${resetToken}`;
+
+    try {
+      const { data, error } = await this.resend.emails.send({
+        from: `${this.fromName} <${this.fromEmail}>`,
+        to: [email],
+        subject: 'Reset Your Password - Krevv Job Platform',
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+              .header h1 { color: white; margin: 0; font-size: 28px; }
+              .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+              .button { display: inline-block; padding: 15px 30px; background: #ef4444; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 20px 0; }
+              .button:hover { background: #dc2626; }
+              .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 5px; }
+              .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Password Reset Request 🔒</h1>
+              </div>
+              <div class="content">
+                <h2 style="color: #1f2937; margin-top: 0;">Hi ${userName},</h2>
+                <p>We received a request to reset the password for your Krevv account.</p>
+                <p>Click the button below to reset your password:</p>
+                <div style="text-align: center;">
+                  <a href="${resetUrl}" class="button">Reset Password</a>
+                </div>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #ef4444; background: #fff; padding: 10px; border-radius: 5px;">${resetUrl}</p>
+                <div class="warning">
+                  <strong>⚠️ Security Notice:</strong>
+                  <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li>This link will expire in 1 hour</li>
+                    <li>If you didn't request this, please ignore this email</li>
+                    <li>Your password will remain unchanged</li>
+                  </ul>
+                </div>
+                <p style="margin-top: 30px;">Best regards,<br><strong>The Krevv Team</strong></p>
+              </div>
+              <div class="footer">
+                <p>&copy; ${new Date().getFullYear()} Krevv Job Platform. All rights reserved.</p>
+                <p style="margin-top: 5px;">Made with ❤️ in Nigeria</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+      });
+
+      if (error) {
+        console.error('❌ Resend error:', error);
+        throw new Error(`Failed to send password reset email: ${error.message}`);
+      }
+
+      console.log(`✅ Password reset email sent to ${email} (ID: ${data?.id})`);
+      return { success: true, data };
+    } catch (error) {
+      console.error('❌ Error sending password reset email:', error);
+      throw error;
+    }
+  }
+
+
+  
+
   // ✅ Send Welcome Email (after verification)
   async sendWelcomeEmail(email: string, userName: string) {
     try {

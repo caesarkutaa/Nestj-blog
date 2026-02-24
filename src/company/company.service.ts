@@ -154,7 +154,7 @@ async verifyEmail(token: string): Promise<{ success: boolean; message: string }>
   company.emailVerificationExpires = undefined;
   await company.save();
 
-  // 3. Send welcome email (You likely already have this logic)
+  // 3. Send welcome email 
   await this.emailService.sendWelcomeEmail(
     company.email,
     company.companyName
@@ -178,42 +178,60 @@ async verifyEmail(token: string): Promise<{ success: boolean; message: string }>
     await company.save();
   }
 
-  async forgotPassword(email: string): Promise<void> {
-    const company = await this.companyModel.findOne({ email: email.toLowerCase() });
-    if (!company) return;
+ async forgotPassword(email: string): Promise<void> {
+  const company = await this.companyModel.findOne({ email: email.toLowerCase() });
+  if (!company) return; // Silent return to prevent email enumeration
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    company.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    company.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
-    await company.save();
-  }
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  company.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  company.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
+  await company.save();
 
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    const company = await this.companyModel.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: { $gt: new Date() },
-    });
+  // ✅ Send the reset email with the RAW token (not hashed)
+  await this.emailService.sendCompanyPasswordResetEmail(
+    company.email,
+    resetToken, // raw token goes in the URL
+    company.companyName,
+  );
+}
 
-    if (!company) throw new HttpException('Invalid or expired reset token', HttpStatus.BAD_REQUEST);
+async resetPassword(token: string, Password: string): Promise<void> {
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const company = await this.companyModel.findOne({
+    passwordResetToken: hashedToken,
+    passwordResetExpires: { $gt: new Date() },
+  });
 
-    company.password = newPassword;
-    company.passwordResetToken = undefined;
-    company.passwordResetExpires = undefined;
-    await company.save();
-  }
+  if (!company) throw new HttpException('Invalid or expired reset token', HttpStatus.BAD_REQUEST);
 
-  async changePassword(companyId: string, currentPassword: string, newPassword: string): Promise<void> {
-    const company = await this.companyModel.findById(companyId).select('+password');
-    if (!company) throw new HttpException('Company not found', HttpStatus.NOT_FOUND);
+  company.password = Password;
+  company.passwordResetToken = undefined;
+  company.passwordResetExpires = undefined;
+  await company.save();
 
-    const isMatch = await company.comparePassword(currentPassword);
-    if (!isMatch) throw new HttpException('Current password is incorrect', HttpStatus.BAD_REQUEST);
+  // ✅ Notify the company their password was changed
+  await this.emailService.sendPasswordChangedEmail(
+    company.email,
+    company.companyName,
+  );   
+}
 
-    company.password = newPassword;
-    await company.save();
-  }
+async changePassword(companyId: string, currentPassword: string, newPassword: string): Promise<void> {
+  const company = await this.companyModel.findById(companyId).select('+password');
+  if (!company) throw new HttpException('Company not found', HttpStatus.NOT_FOUND);
 
+  const isMatch = await company.comparePassword(currentPassword);
+  if (!isMatch) throw new HttpException('Current password is incorrect', HttpStatus.BAD_REQUEST);
+
+  company.password = newPassword;
+  await company.save();
+
+  // ✅ Notify the company their password was changed
+  await this.emailService.sendPasswordChangedEmail(
+    company.email,
+    company.companyName,
+  );
+}
   // =============================================
   // PROFILE MANAGEMENT
   // =============================================
