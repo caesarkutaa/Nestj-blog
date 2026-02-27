@@ -12,7 +12,9 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { Application,ApplicationSchema } from '../application/schema/application.schema';
 import { CustomOrder,  CustomOrderSchema } from '../marketplace/schema/custom-order.schema';
 import { ServiceTask, ServiceTaskSchema } from '../marketplace/schema/service.schema';
-
+import { PayoutRequest, PayoutRequestSchema } from 'src/marketplace/schema/payout-request.schema';
+import { OrderMessage, OrderMessageSchema } from 'src/marketplace/schema/order-message.schema';
+import  {EmailService} from '../email/email.service';
 
 
 @Module({
@@ -24,7 +26,11 @@ import { ServiceTask, ServiceTaskSchema } from '../marketplace/schema/service.sc
       { name: Company.name, schema: CompanySchema },
       { name: Application.name, schema: ApplicationSchema },
       { name: CustomOrder.name, schema: CustomOrderSchema },
-      { name: ServiceTask.name, schema: ServiceTaskSchema }
+      { name: ServiceTask.name, schema: ServiceTaskSchema },
+      { name: PayoutRequest.name, schema: PayoutRequestSchema },
+      { name: 'OrderMessage', schema: OrderMessageSchema },
+
+      
       
     ]),
     JwtModule.register({
@@ -34,7 +40,7 @@ import { ServiceTask, ServiceTaskSchema } from '../marketplace/schema/service.sc
     CloudinaryModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService],
+  providers: [AdminService, EmailService],
   exports: [AdminService],
 })
 export class AdminModule {}

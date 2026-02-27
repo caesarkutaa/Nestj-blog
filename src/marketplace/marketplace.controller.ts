@@ -195,34 +195,42 @@ async getMyOrders(@Req() req: any) {
   return await this.marketplaceService.getMyOrders(userId);
 }
 
-  @Post('orders/:orderId/create-paypal-order')
-  @UseGuards(JwtAuthGuard)
-  async createPaypalOrder(
-    @Param('orderId') orderId: string,
-    @Req() req: any,
-  ) {
-    const buyerId = this.getUserId(req);
-    return await this.marketplaceService.createPayPalOrderForCustomOrder(
-      orderId,
-      buyerId,
-    );
-  }
+@Post('orders/:orderId/create-paypal-order')
+@UseGuards(JwtAuthGuard)
+async createPaypalOrder(
+  @Param('orderId') orderId: string,
+  @Request() req: any,
+) {
+  const userId = this.getUserId(req);
+  return this.marketplaceService.createPayPalOrderForCustomOrder(
+    orderId,
+    userId,
+  );
+}
 
 
-  @Post('orders/:orderId/capture-paypal-order')
-  @UseGuards(JwtAuthGuard)
-  async capturePaypalOrder(
-    @Param('orderId') orderId: string,
-    @Body() body: { paypalOrderId: string },
-    @Req() req: any,
-  ) {
-    const buyerId = this.getUserId(req);
-    return await this.marketplaceService.capturePayPalOrderForCustomOrder(
-      orderId,
-      body.paypalOrderId,
-      buyerId,
-    );
+@Post('orders/:orderId/capture-paypal-order')
+@UseGuards(JwtAuthGuard)
+async capturePaypalOrder(
+  @Param('orderId') orderId: string,
+  @Body('paypalOrderId') paypalOrderId: string,
+  @Request() req: any,
+) {
+  console.log('DEBUG req.user:', req.user); 
+  console.log('DEBUG paypalOrderId:', paypalOrderId);
+
+  const userId = req.user?._id || req.user?.id || req.user?.sub;
+
+  if (!userId) {
+    throw new BadRequestException('User not authenticated');
   }
+
+  return this.marketplaceService.capturePayPalOrderForCustomOrder(
+    orderId,
+    paypalOrderId,
+    userId,
+  );
+}
 
 // ==================== PAYMENT ACTIONS ====================
 
@@ -263,6 +271,25 @@ async handlePaymentAction(
   return message;
 }
 
+
+
+@Post('orders/:orderId/request-payout')
+@UseGuards(JwtAuthGuard)
+async requestPayout(
+  @Param('orderId') orderId: string,
+  @Req() req: any,
+) {
+  const developerId = this.getUserId(req);
+  return await this.marketplaceService.requestPayout(orderId, developerId);
+}
+
+// ✅ Developer: Get My Payout Requests
+@Get('my-payout-requests')
+@UseGuards(JwtAuthGuard)
+async getMyPayoutRequests(@Req() req: any) {
+  const developerId = this.getUserId(req);
+  return await this.marketplaceService.getMyPayoutRequests(developerId);
+}
 
   // ==================== ORDER WORKFLOW ====================
 

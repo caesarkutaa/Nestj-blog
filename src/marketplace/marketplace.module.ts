@@ -13,6 +13,8 @@ import { OrderMessage, OrderMessageSchema } from './schema/order-message.schema'
 import { Company, CompanySchema } from '../company/schema/company.schema';
 import { User, UserSchema } from '../user/schemas/user.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
+import  { PayoutRequestStatus, PayoutRequestSchema } from './schema/payout-request.schema';
+import  {EmailService} from '../email/email.service';
 
 
 
@@ -27,11 +29,12 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Company.name, schema: CompanySchema },
      { name: 'User', schema: UserSchema },
       { name: ServiceMessage.name, schema: ServiceMessageSchema },
+      { name: 'PayoutRequest', schema: PayoutRequestSchema },
     ]),
     NotificationsModule,
   ],
   controllers: [MarketplaceController],
-  providers: [MarketplaceServiceClass, PayPalService, ChatGateway],
+  providers: [MarketplaceServiceClass, PayPalService, ChatGateway, EmailService],
   exports: [MarketplaceServiceClass,ChatGateway],
 })
 export class MarketplaceModule {}

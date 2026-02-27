@@ -6,11 +6,14 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
 import { ServiceTask, ServiceStatus } from './schema/service.schema';
 import { ServiceApplication, ApplicationStatus } from './schema/service-application.schema';
 import { CustomOrder, OrderStatus } from './schema/custom-order.schema';
 import { OrderMessage, MessageType } from './schema/order-message.schema';
+import { PayoutRequest, PayoutRequestStatus } from './schema/payout-request.schema'; 
 import axios from 'axios';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class MarketplaceService {
@@ -29,6 +32,11 @@ export class MarketplaceService {
     private userModel: Model<any>,
     @InjectModel(OrderMessage.name)
     private orderMessageModel: Model<OrderMessage>,
+    @InjectModel(PayoutRequest.name)
+    private payoutRequestModel: Model<PayoutRequest>,
+    private readonly emailService: EmailService,
+  private readonly configService: ConfigService,
+
   ) {}
 
   // ==================== EXISTING SERVICE CRUD (Keep as is) ====================
@@ -365,34 +373,16 @@ async getServiceOrders(serviceId: string, userId: string) {
 
 
   // ==================== PAYPAL PAYMENT ====================
-async createPayPalOrderForCustomOrder(orderId: string, clientId: string, clientModel: 'User' | 'Company' = 'User') {
-  const order = await this.orderModel
-    .findById(orderId)
-    .populate('developerId', 'firstName lastName email paypalEmail companyName');
-
+async createPayPalOrderForCustomOrder(orderId: string, clientId: string) {
+  const order = await this.orderModel.findById(orderId);
   if (!order) throw new NotFoundException('Order not found');
 
-  // ✅ FIX: When assigning clientId, we MUST also assign clientModel 
-  // because refPath: 'clientModel' makes it a required validation field.
-  if (!order.clientId) {
-    // This is a custom order that anyone can accept - assign the payer as client
-    order.clientId = new Types.ObjectId(clientId);
-    order.clientModel = clientModel; // ✅ Set the model type (User or Company)
-    await order.save();
-  } else if (order.clientId.toString() !== clientId) {
-    // Order already has a client assigned, and it's not this user
-    throw new ForbiddenException('This order has already been claimed by another client');
+  if (order.clientId.toString() !== clientId) {
+    throw new ForbiddenException('Access denied');
   }
 
   if (order.status !== OrderStatus.PENDING_PAYMENT) {
     throw new BadRequestException('This order has already been paid');
-  }
-    
-  const developer = order.developerId as any;
-  if (!developer?.paypalEmail) {    
-    throw new BadRequestException(
-      'Developer has not set up their PayPal account yet'
-    );
   }
 
   const PAYPAL_API =
@@ -416,6 +406,7 @@ async createPayPalOrderForCustomOrder(orderId: string, clientId: string, clientM
               value: order.totalAmount.toFixed(2),
             },
             description: `Order: ${order.title}`,
+            // ✅ No payee here — money goes to YOUR platform account
           },
         ],
         application_context: {
@@ -437,7 +428,7 @@ async createPayPalOrderForCustomOrder(orderId: string, clientId: string, clientM
 
     return { paypalOrderId: response.data.id };
   } catch (error) {
-    console.error('PayPal error:', error.response?.data || error);
+    console.error('PayPal create error:', error.response?.data || error);
     throw new BadRequestException('Failed to create PayPal order');
   }
 }
@@ -478,10 +469,16 @@ async capturePayPalOrderForCustomOrder(
   paypalOrderId: string,
   clientId: string,
 ) {
-  const order = await this.orderModel.findById(orderId);
+  // ✅ Populate order with all related data
+  const order = await this.orderModel
+    .findById(orderId)
+    .populate('developerId', 'firstName lastName email paypalEmail companyName')
+    .populate('clientId', 'firstName lastName email companyName')
+    .populate('serviceId', 'title description');
+
   if (!order) throw new NotFoundException('Order not found');
 
-  if (order.clientId.toString() !== clientId) {
+  if (order.clientId._id.toString() !== clientId) {
     throw new ForbiddenException('Access denied');
   }
 
@@ -495,6 +492,7 @@ async capturePayPalOrderForCustomOrder(
   ).toString('base64');
 
   try {
+    // ✅ Capture payment to YOUR business account
     const response = await axios.post(
       `${PAYPAL_API}/v2/checkout/orders/${paypalOrderId}/capture`,
       {},
@@ -507,42 +505,116 @@ async capturePayPalOrderForCustomOrder(
     );
 
     if (response.data.status === 'COMPLETED') {
+      // ✅ Money is now in YOUR PayPal account
       order.status = OrderStatus.PAID;
       order.paypalCaptureId =
         response.data.purchase_units[0].payments.captures[0].id;
       order.paidAt = new Date();
       await order.save();
 
-      // ✅ FIX: Determine sender model
+      // ✅ Determine sender model
       let senderModel: 'User' | 'Company' = 'User';
-      
-      // Option 1: Use order's clientModel field (if you added it)
       if (order.clientModel) {
         senderModel = order.clientModel as 'User' | 'Company';
       } else {
-        // Option 2: Check database
         try {
-          const company = await this.companyModel.findById(order.clientId);
-          if (company) {
-            senderModel = 'Company';
-          }
-        } catch (err) {
-          // Default to User
-        }
+          const company = await this.companyModel.findById(order.clientId._id);
+          if (company) senderModel = 'Company';
+        } catch (err) {}
       }
 
-      // ✅ Create message with senderModel
+      // ✅ Create payment received message
       const paymentMessage = new this.orderMessageModel({
         serviceId: order.serviceId,
         orderId: order._id,
-        senderId: order.clientId,
-        senderModel: senderModel,      
-        text: `Payment sent! Order is now active.`,
+        senderId: order.clientId._id,
+        senderModel: senderModel,
+        text: `Payment sent! Order is now active. Funds are held in escrow.`,
         type: MessageType.PAYMENT_RECEIVED,
         timestamp: new Date(),
       });
-      
+
       await paymentMessage.save();
+
+      // ✅ Extract data for emails
+      const client = order.clientId as any;
+      const developer = order.developerId as any;
+      const service = order.serviceId as any;
+
+      const clientName = senderModel === 'Company' 
+        ? client.companyName 
+        : `${client.firstName} ${client.lastName}`;
+
+      const developerName = order.developerModel === 'Company'
+        ? developer.companyName
+        : `${developer.firstName} ${developer.lastName}`;
+
+      // ✅ 1. Send email to ADMIN
+      try {
+        const adminEmail = process.env.ADMIN_EMAIL || 'admin@krevv.com';
+
+        await this.emailService.sendPaymentSuccessNotificationToAdmin({
+          adminEmail,
+          clientName,
+          clientEmail: client.email,
+          developerName,
+          orderTitle: order.title,
+          orderDescription: order.description,
+          amount: order.price,
+          platformFee: order.platformFee,
+          totalAmount: order.totalAmount,
+          orderId: order._id.toString(),
+          serviceTitle: service.title,
+          paypalCaptureId: order.paypalCaptureId || undefined,
+          clientType: senderModel,
+        });
+
+        console.log(`✅ Admin payment notification sent for order ${order._id}`);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send admin email notification:', emailError);
+      }
+
+      // ✅ 2. NEW: Send email to CLIENT
+      try {
+        await this.emailService.sendPaymentSuccessEmailToClient({
+          clientEmail: client.email,
+          clientName,
+          developerName,
+          orderTitle: order.title,
+          orderDescription: order.description,
+          amount: order.price,
+          platformFee: order.platformFee,
+          totalAmount: order.totalAmount,
+          deliveryTime: order.deliveryTime,
+          orderId: order._id.toString(),
+          serviceTitle: service.title,
+          paypalCaptureId: order.paypalCaptureId || undefined,
+        });
+
+        console.log(`✅ Payment success email sent to client ${client.email}`);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send payment success email to client:', emailError);
+      }
+
+      // ✅ 3. NEW: Send email to DEVELOPER
+      try {
+        await this.emailService.sendNewOrderEmailToDeveloper({
+          developerEmail: developer.email,
+          developerName,
+          clientName,
+          orderTitle: order.title,
+          orderDescription: order.description,
+          amount: order.price,
+          deliveryTime: order.deliveryTime,
+          orderId: order._id.toString(),
+          serviceTitle: service.title,
+          clientType: senderModel,
+        });
+
+        console.log(`✅ New order email sent to developer ${developer.email}`);
+      } catch (emailError) {
+        console.error('⚠️ Failed to send new order email to developer:', emailError);
+      }
 
       return { success: true, order, message: paymentMessage };
     }
@@ -552,14 +624,320 @@ async capturePayPalOrderForCustomOrder(
     console.error('PayPal capture error:', error.response?.data || error);
     throw new BadRequestException('Failed to capture payment');
   }
-}   
-  // ==================== ORDER DELIVERY ====================
+}
 
-async startWork(orderId: string, developerId: string) {
-  const order = await this.orderModel.findById(orderId);
+async requestPayout(orderId: string, developerId: string) {
+  const order = await this.orderModel
+    .findById(orderId)
+    .populate('developerId', 'firstName lastName email paypalEmail companyName')
+    .populate('clientId', 'firstName lastName email companyName');
+
   if (!order) throw new NotFoundException('Order not found');
 
-  if (order.developerId.toString() !== developerId) {
+  if (order.developerId._id.toString() !== developerId) {
+    throw new ForbiddenException('Only the developer can request payout');
+  }
+
+  if (order.status !== OrderStatus.COMPLETED) {
+    throw new BadRequestException(
+      'Payout can only be requested after order is completed and delivery is accepted',
+    );
+  }
+
+  const developer = order.developerId as any;
+  if (!developer.paypalEmail) {
+    throw new BadRequestException(
+      'Please add your PayPal email in profile settings before requesting payout',
+    );
+  }
+
+  // ✅ Check previous payout attempts for this order (including rejected ones)
+  const allRequests = await this.payoutRequestModel.find({
+    orderId: new Types.ObjectId(orderId),
+  });
+
+  // ✅ Block if there's already a pending or approved request
+  const activeRequest = allRequests.find(
+    (r) => r.status === PayoutRequestStatus.PENDING || r.status === PayoutRequestStatus.APPROVED,
+  );
+  if (activeRequest) {
+    if (activeRequest.status === PayoutRequestStatus.APPROVED) {
+      throw new BadRequestException('Payout has already been approved for this order');
+    }
+    throw new BadRequestException('A payout request is already pending for this order');
+  }
+
+  // ✅ Count rejected attempts
+  const rejectedCount = allRequests.filter(
+    (r) => r.status === PayoutRequestStatus.REJECTED,
+  ).length;
+
+  // ✅ After 3 rejections, tell developer to contact support
+  if (rejectedCount >= 3) {
+    throw new BadRequestException(
+      'Your payout request has been rejected 3 times. Please contact support at supports@krevv.com for assistance.',
+    );
+  }
+
+  // ✅ Determine developer model
+  let developerModel: 'User' | 'Company' = 'User';
+  if (order.developerModel) {
+    developerModel = order.developerModel as 'User' | 'Company';
+  } else {
+    try {
+      const company = await this.companyModel.findById(developerId);
+      if (company) developerModel = 'Company';
+    } catch (err) {}
+  }
+
+  // ✅ Create payout request
+  const payoutRequest = new this.payoutRequestModel({
+    orderId: new Types.ObjectId(orderId),
+    developerId: new Types.ObjectId(developerId),
+    developerModel,
+    amount: order.price,
+    paypalEmail: developer.paypalEmail,
+    status: PayoutRequestStatus.PENDING,
+    requestedAt: new Date(),
+  });
+
+  await payoutRequest.save();
+
+  // ✅ Create chat notification message
+  const notificationMessage = new this.orderMessageModel({
+    serviceId: order.serviceId,
+    orderId: order._id,
+    senderId: new Types.ObjectId(developerId),
+    senderModel: order.developerModel || developerModel,
+    text: `Developer has requested payout of $${order.price}. Awaiting admin approval.${
+      rejectedCount > 0 ? ` (Attempt ${rejectedCount + 1} of 3)` : ''
+    }`,
+    type: MessageType.TEXT,
+    timestamp: new Date(),
+  });   
+  await notificationMessage.save();
+
+  // ✅ Send email to ADMIN notifying of new payout request
+  const developerName =
+    developer.companyName ||
+    `${developer.firstName || ''} ${developer.lastName || ''}`.trim() ||
+    'Developer';
+
+  const adminEmail = this.configService.get<string>('ADMIN_EMAIL') || 'supports@krevv.com';
+
+  try {
+    await this.emailService.sendPayoutRequestNotificationToAdmin({
+      adminEmail,
+      developerName,
+      developerEmail: developer.email,
+      paypalEmail: developer.paypalEmail,
+      amount: order.price,
+      orderTitle: order.title,
+      orderId: orderId,
+      attemptNumber: rejectedCount + 1,
+    });
+  } catch (emailErr) {
+    console.error('Failed to send admin payout notification email:', emailErr);
+    // Don't throw — payout request was saved successfully
+  }
+
+  console.log(`💰 Payout requested: $${order.price} to ${developer.paypalEmail} (${developerModel}) — attempt ${rejectedCount + 1}`);
+
+  const attemptMessage =
+    rejectedCount === 0
+      ? 'Payout request submitted. Admin will process within 24-48 hours.'
+      : rejectedCount === 1
+      ? 'Payout re-submitted (attempt 2 of 3). Admin will review shortly.'
+      : 'Final payout attempt submitted (attempt 3 of 3). If rejected again, please contact supports@krevv.com.';
+
+  return {
+    success: true,
+    payoutRequest,
+    message: attemptMessage,
+    attemptsRemaining: 3 - (rejectedCount + 1),
+  };
+}
+
+
+
+async getMyPayoutRequests(developerId: string) {
+  // ✅ Find using developerId (works for both User and Company)
+  const requests = await this.payoutRequestModel
+    .find({ developerId: new Types.ObjectId(developerId) })
+    .populate({
+      path: 'orderId',
+      populate: [
+        { path: 'serviceId', select: 'title category' },
+        { path: 'clientId', select: 'firstName lastName email companyName' },
+      ],
+    })
+    .sort({ requestedAt: -1 })
+    .exec();
+
+  // ✅ Manually populate developerId based on developerModel
+  const populatedRequests = await Promise.all(
+    requests.map(async (req) => {
+      const reqObj = req.toObject();
+      
+      if (reqObj.developerModel === 'Company') {
+        const company = await this.companyModel
+          .findById(reqObj.developerId)
+          .select('companyName email paypalEmail ')
+          .lean();
+        
+        return {
+          ...reqObj,
+          developerId: company || reqObj.developerId,
+        };
+      } else {
+        const user = await this.userModel
+          .findById(reqObj.developerId)
+          .select('firstName lastName email paypalEmail')
+          .lean();
+        
+        return {
+          ...reqObj,
+          developerId: user || reqObj.developerId,
+        };
+      }
+    })
+  );
+
+  return populatedRequests;
+}
+
+
+async getAllPayoutRequests() {
+  return await this.payoutRequestModel
+    .find()
+    .populate('developerId', 'firstName lastName email paypalEmail companyName')
+    .populate({
+      path: 'orderId',
+      populate: [
+        { path: 'serviceId', select: 'title category budget' },
+        { path: 'clientId', select: 'firstName lastName email companyName' },
+      ],
+    })
+    .sort({ requestedAt: -1 })
+    .exec();
+}
+
+
+async approvePayout(
+  payoutRequestId: string,
+  adminId: string,
+  data: {
+    paypalPayoutId?: string; // Admin enters this after manually sending via PayPal
+    notes?: string;
+  },
+) {
+  const payoutRequest = await this.payoutRequestModel
+    .findById(payoutRequestId)
+    .populate('developerId', 'firstName lastName email paypalEmail')
+    .populate('orderId');
+
+  if (!payoutRequest) throw new NotFoundException('Payout request not found');
+
+  if (payoutRequest.status !== PayoutRequestStatus.PENDING) {
+    throw new BadRequestException('Payout request has already been processed');
+  }
+
+  // ✅ Update payout request
+  payoutRequest.status = PayoutRequestStatus.APPROVED;
+  payoutRequest.processedAt = new Date();
+  payoutRequest.processedBy = new Types.ObjectId(adminId);
+  payoutRequest.paypalPayoutId = data.paypalPayoutId;
+  payoutRequest.adminNotes = data.notes;
+
+  await payoutRequest.save();
+
+  // ✅ Create notification message
+  const order = payoutRequest.orderId as any;
+  const notificationMessage = new this.orderMessageModel({
+    serviceId: order.serviceId,
+    orderId: order._id,
+    senderId: new Types.ObjectId(adminId),
+    senderModel: 'User', // Admin is sending
+    text: `✅ Payout approved! $${payoutRequest.amount} has been sent to your PayPal account.`,
+    type: MessageType.TEXT,
+    timestamp: new Date(),
+  });
+
+  await notificationMessage.save();
+
+  console.log(`✅ Payout approved: $${payoutRequest.amount} to ${(payoutRequest.developerId as any).paypalEmail}`);
+
+  return {
+    success: true,
+    payoutRequest,
+    message: 'Payout approved and notification sent to developer',
+  };
+}
+
+async rejectPayout(
+  payoutRequestId: string,
+  adminId: string,
+  data: {
+    reason: string;
+  },
+) {
+  const payoutRequest = await this.payoutRequestModel
+    .findById(payoutRequestId)
+    .populate('orderId');
+
+  if (!payoutRequest) throw new NotFoundException('Payout request not found');
+
+  if (payoutRequest.status !== PayoutRequestStatus.PENDING) {
+    throw new BadRequestException('Payout request has already been processed');
+  }
+
+  // ✅ Update payout request
+  payoutRequest.status = PayoutRequestStatus.REJECTED;
+  payoutRequest.processedAt = new Date();
+  payoutRequest.processedBy = new Types.ObjectId(adminId);
+  payoutRequest.adminNotes = data.reason;
+
+  await payoutRequest.save();
+
+  // ✅ Create notification message
+  const order = payoutRequest.orderId as any;
+  const notificationMessage = new this.orderMessageModel({
+    serviceId: order.serviceId,
+    orderId: order._id,
+    senderId: new Types.ObjectId(adminId),
+    senderModel: 'User',
+    text: `❌ Payout request rejected. Reason: ${data.reason}`,
+    type: MessageType.TEXT,
+    timestamp: new Date(),
+  });
+
+  await notificationMessage.save();
+
+  console.log(`❌ Payout rejected for request ${payoutRequestId}`);
+
+  return {
+    success: true,
+    payoutRequest,
+    message: 'Payout rejected and notification sent to developer',
+  };
+}
+
+
+  // ==================== ORDER DELIVERY ====================
+
+// ==================== UPDATE IN marketplace.service.ts ====================
+
+// ✅ UPDATED: startWork with client email notification
+async startWork(orderId: string, developerId: string) {
+  const order = await this.orderModel
+    .findById(orderId)
+    .populate('clientId', 'firstName lastName email companyName')
+    .populate('developerId', 'firstName lastName email companyName')
+    .populate('serviceId', 'title description');
+
+  if (!order) throw new NotFoundException('Order not found');
+
+  if (order.developerId._id.toString() !== developerId) {
     throw new ForbiddenException('Only the developer can start work');
   }
 
@@ -570,22 +948,53 @@ async startWork(orderId: string, developerId: string) {
   order.status = OrderStatus.IN_PROGRESS;
   await order.save();
 
-  // ✅ FIX: Add senderModel (developer is sending)
+  // ✅ Create work started message
   const workMessage = new this.orderMessageModel({
     serviceId: order.serviceId,
     orderId: order._id,
     senderId: new Types.ObjectId(developerId),
-    senderModel: order.developerModel, // ✅ Use developer's model from order
+    senderModel: order.developerModel,
     text: `Work has started on your order!`,
     type: MessageType.WORK_STARTED,
     timestamp: new Date(),
   });
   await workMessage.save();
 
+  // ✅ NEW: Send email to client
+  try {
+    const client = order.clientId as any;
+    const developer = order.developerId as any;
+    const service = order.serviceId as any;
+
+    const clientName = order.clientModel === 'Company' 
+      ? client.companyName 
+      : `${client.firstName} ${client.lastName}`;
+
+    const developerName = order.developerModel === 'Company'
+      ? developer.companyName
+      : `${developer.firstName} ${developer.lastName}`;
+
+    await this.emailService.sendWorkStartedEmailToClient({
+      clientEmail: client.email,
+      clientName,
+      developerName,
+      orderTitle: order.title,
+      orderDescription: order.description,
+      deliveryTime: order.deliveryTime,
+      amount: order.price,
+      orderId: order._id.toString(),
+      serviceTitle: service.title,
+    });
+
+    console.log(`✅ Work started email sent to client ${client.email}`);
+  } catch (emailError) {
+    console.error('⚠️ Failed to send work started email:', emailError);
+  }
+
   return { order, message: workMessage };
 }
 
-// 2. ✅ submitDelivery - Developer sends message
+// ✅ UPDATED: submitDelivery with client email notification
 async submitDelivery(
   orderId: string,
   developerId: string,
@@ -594,11 +1003,18 @@ async submitDelivery(
     deliveryFiles?: string[];
   },
 ) {
-  const order = await this.orderModel.findById(orderId);
+  const order = await this.orderModel
+    .findById(orderId)
+    .populate('clientId', 'firstName lastName email companyName')
+    .populate('developerId', 'firstName lastName email companyName')
+    .populate('serviceId', 'title description');
+
   if (!order) throw new NotFoundException('Order not found');
-  if (order.developerId.toString() !== developerId) {
+
+  if (order.developerId._id.toString() !== developerId) {
     throw new ForbiddenException('Only the developer can submit delivery');
   }
+
   if (order.status !== OrderStatus.IN_PROGRESS) {
     throw new BadRequestException('Order must be in progress');
   }
@@ -609,22 +1025,52 @@ async submitDelivery(
   order.deliveredAt = new Date();
   await order.save();
 
-  // ✅ FIX: Add senderModel (developer is sending)
+  // ✅ Create delivery submitted message
   const deliveryMessage = new this.orderMessageModel({
     serviceId: order.serviceId,
     orderId: order._id,
     senderId: new Types.ObjectId(developerId),
-    senderModel: order.developerModel, // ✅ Use developer's model from order
+    senderModel: order.developerModel,
     text: `Delivery submitted! Please review and accept.`,
     type: MessageType.DELIVERY_SUBMITTED,
     timestamp: new Date(),
   });
   await deliveryMessage.save();
 
+  // ✅ NEW: Send email to client
+  try {
+    const client = order.clientId as any;
+    const developer = order.developerId as any;
+    const service = order.serviceId as any;
+
+    const clientName = order.clientModel === 'Company' 
+      ? client.companyName 
+      : `${client.firstName} ${client.lastName}`;
+
+    const developerName = order.developerModel === 'Company'
+      ? developer.companyName
+      : `${developer.firstName} ${developer.lastName}`;
+
+    await this.emailService.sendDeliverySubmittedEmailToClient({
+      clientEmail: client.email,
+      clientName,
+      developerName,
+      orderTitle: order.title,
+      deliveryNote: data.deliveryNote,
+      amount: order.price,
+      orderId: order._id.toString(),
+      serviceTitle: service.title,
+    });
+
+    console.log(`✅ Delivery submitted email sent to client ${client.email}`);
+  } catch (emailError) {
+    console.error('⚠️ Failed to send delivery submitted email:', emailError);
+  }
+
   return { order, message: deliveryMessage };
 }
 
-// 3. ✅ acceptDelivery - Client sends message
+// ✅ UPDATED: acceptDelivery with developer email notification
 async acceptDelivery(
   orderId: string,
   clientId: string,
@@ -632,11 +1078,13 @@ async acceptDelivery(
 ) {
   const order = await this.orderModel
     .findById(orderId)
-    .populate('developerId', 'paypalEmail');
+    .populate('clientId', 'firstName lastName email companyName')
+    .populate('developerId', 'firstName lastName email paypalEmail companyName')
+    .populate('serviceId', 'title description');
 
   if (!order) throw new NotFoundException('Order not found');
 
-  if (order.clientId.toString() !== clientId) {
+  if (order.clientId._id.toString() !== clientId) {
     throw new ForbiddenException('Only the client can accept delivery');
   }
 
@@ -650,22 +1098,54 @@ async acceptDelivery(
   order.clientRating = data.rating;
   await order.save();
 
-  console.log(`💰 Releasing $${order.price} to developer`);
+  console.log(`💰 Order completed - Developer can now request payout for $${order.price}`);
 
-  // ✅ FIX: Add senderModel (client is sending)
+  // ✅ Create completion message
   const completionMessage = new this.orderMessageModel({
     serviceId: order.serviceId,
     orderId: order._id,
     senderId: new Types.ObjectId(clientId),
-    senderModel: order.clientModel, // ✅ Use client's model from order
-    text: `Order completed! Payment released to developer.`,
+    senderModel: order.clientModel,
+    text: `Order completed! Developer can now request payout.`,
     type: MessageType.ORDER_COMPLETED,
     timestamp: new Date(),
   });
   await completionMessage.save();
 
+  // ✅ NEW: Send email to developer
+  try {
+    const client = order.clientId as any;
+    const developer = order.developerId as any;
+    const service = order.serviceId as any;
+
+    const clientName = order.clientModel === 'Company' 
+      ? client.companyName 
+      : `${client.firstName} ${client.lastName}`;
+
+    const developerName = order.developerModel === 'Company'
+      ? developer.companyName
+      : `${developer.firstName} ${developer.lastName}`;
+
+    await this.emailService.sendDeliveryAcceptedEmailToDeveloper({
+      developerEmail: developer.email,
+      developerName,
+      clientName,
+      orderTitle: order.title,
+      amount: order.price,
+      rating: data.rating,
+      review: data.review,
+      orderId: order._id.toString(),
+      serviceTitle: service.title,
+    });
+
+    console.log(`✅ Delivery accepted email sent to developer ${developer.email}`);
+  } catch (emailError) {
+    console.error('⚠️ Failed to send delivery accepted email:', emailError);
+  }
+
   return { order, message: completionMessage };
 }
+
 
 // 4. ✅ sendMessage - Regular chat message
 async sendMessage(serviceId: string, text: string, senderId: string) {

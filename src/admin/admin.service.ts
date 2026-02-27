@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +13,9 @@ import { Company } from '../company/schema/company.schema';
 import { Application } from 'src/application/schema/application.schema';
 import { CustomOrder } from '../marketplace/schema/custom-order.schema'; 
 import { ServiceTask } from '../marketplace/schema/service.schema'; 
+import { PayoutRequest } from 'src/marketplace/schema/payout-request.schema'; 
+import { MessageType, OrderMessage } from 'src/marketplace/schema/order-message.schema';
+import { EmailService } from 'src/email/email.service';
 
 
 @Injectable()
@@ -25,9 +28,13 @@ export class AdminService {
     @InjectModel(Application.name) private applicationModel: Model<Application>,
     @InjectModel(CustomOrder.name) private orderModel: Model<CustomOrder>,
    @InjectModel(ServiceTask.name) private serviceModel: Model<ServiceTask>,
+   @InjectModel(PayoutRequest.name) private payoutRequestModel: Model<PayoutRequest>,
+   @InjectModel('OrderMessage')
+    private readonly orderMessageModel: Model<OrderMessage>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private cloudinaryService: CloudinaryService,
+     private readonly emailService: EmailService,
   ) {}
 
   async create(createAdminDto: { username: string; password: string }) {
@@ -693,5 +700,331 @@ async getMarketplaceDashboardStats(): Promise<any> {
     throw new InternalServerErrorException('Failed to fetch marketplace stats');
   }
 }
+
+async getAllPayoutRequests(): Promise<any> {
+  try {
+    const payoutRequests = await this.payoutRequestModel
+      .find()
+      .populate({
+        path: 'orderId',
+        populate: [
+          { path: 'serviceId', select: 'title category budget' },
+          { path: 'clientId', select: 'firstName lastName email companyName' },
+        ],
+      })
+      .populate('processedBy', 'username firstName lastName')
+      .sort({ requestedAt: -1 })
+      .exec();
+
+    // ✅ Manually populate developerId based on developerModel
+    const populatedRequests = await Promise.all(
+      payoutRequests.map(async (req) => {
+        const reqObj = req.toObject();
+        
+        if (reqObj.developerModel === 'Company') {
+          const company = await this.companyModel
+            .findById(reqObj.developerId)
+            .select('companyName email paypalEmail phone')
+            .lean();
+          
+          return {
+            ...reqObj,
+            developerId: company || reqObj.developerId,
+          };
+        } else {
+          const user = await this.userModel
+            .findById(reqObj.developerId)
+            .select('firstName lastName email paypalEmail phone')
+            .lean();
+          
+          return {
+            ...reqObj,
+            developerId: user || reqObj.developerId,
+          };
+        }
+      })
+    );
+
+    const stats = {
+      total: payoutRequests.length,
+      pending: payoutRequests.filter(p => p.status === 'pending').length,
+      approved: payoutRequests.filter(p => p.status === 'approved').length,
+      rejected: payoutRequests.filter(p => p.status === 'rejected').length,
+      totalPendingAmount: payoutRequests
+        .filter(p => p.status === 'pending')
+        .reduce((sum, p) => sum + p.amount, 0),
+      totalApprovedAmount: payoutRequests
+        .filter(p => p.status === 'approved')
+        .reduce((sum, p) => sum + p.amount, 0),
+    };
+
+    return { payoutRequests: populatedRequests, stats };
+  } catch (error) {
+    console.error('Error fetching payout requests:', error);
+    throw new InternalServerErrorException('Failed to fetch payout requests');
+  }
+}
+
+// ✅ Get Single Payout Request
+async getPayoutRequestById(payoutRequestId: string): Promise<any> {
+  const payoutRequest = await this.payoutRequestModel
+    .findById(payoutRequestId)
+    .populate({
+      path: 'orderId',
+      populate: [
+        { path: 'serviceId', select: 'title description category budget' },
+        { path: 'clientId', select: 'firstName lastName email companyName' },
+      ],
+    })
+    .populate('processedBy', 'username firstName lastName')
+    .exec();
+
+  if (!payoutRequest) {
+    throw new NotFoundException('Payout request not found');
+  }
+
+  // ✅ Manually populate developerId
+  const reqObj = payoutRequest.toObject();
+  
+  let developer;
+  if (reqObj.developerModel === 'Company') {
+    developer = await this.companyModel
+      .findById(reqObj.developerId)
+      .select('companyName email paypalEmail phone')
+      .lean();
+  } else {
+    developer = await this.userModel
+      .findById(reqObj.developerId)
+      .select('firstName lastName email paypalEmail phone')
+      .lean();
+  }
+
+  return {
+    ...reqObj,
+    developerId: developer || reqObj.developerId,
+  };
+}
+
+// ✅ Approve Payout (Admin manually pays via PayPal, then marks as approved)
+async approvePayout(
+  adminId: string,
+  payoutRequestId: string,
+  data: { paypalPayoutId?: string; notes?: string },
+): Promise<any> {
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) throw new NotFoundException('Admin not found');
+
+  const payoutRequest = await this.payoutRequestModel
+    .findById(payoutRequestId)
+    .populate('orderId');
+
+  if (!payoutRequest) throw new NotFoundException('Payout request not found');
+
+  if (payoutRequest.status !== 'pending') {
+    throw new BadRequestException('Payout request has already been processed');
+  }
+
+  // ✅ Get developer info
+  let developer: any;
+  if (payoutRequest.developerModel === 'Company') {
+    developer = await this.companyModel.findById(payoutRequest.developerId);
+  } else {
+    developer = await this.userModel.findById(payoutRequest.developerId);
+  }
+
+  const developerEmail = developer?.email;
+  const developerPaypalEmail = developer?.paypalEmail || payoutRequest.paypalEmail;
+  const developerName =
+    developer?.companyName ||
+    `${developer?.firstName || ''} ${developer?.lastName || ''}`.trim() ||
+    'Developer';
+
+  // ✅ Update payout request
+  payoutRequest.status = 'approved' as any;
+  payoutRequest.processedAt = new Date();
+  payoutRequest.processedBy = new Types.ObjectId(adminId);
+  payoutRequest.paypalPayoutId = data.paypalPayoutId;
+  payoutRequest.adminNotes = data.notes;
+  await payoutRequest.save();
+
+  // ✅ Create chat notification message
+  const order = payoutRequest.orderId as any;
+  const serviceId = order?.serviceId?._id || order?.serviceId;
+
+  if (serviceId) {
+    const notificationMessage = new this.orderMessageModel({
+      serviceId,
+      orderId: order._id,
+      senderId: new Types.ObjectId(adminId),
+      senderModel: 'User',
+      text: `✅ Payout approved! $${payoutRequest.amount} has been sent to your PayPal account (${developerPaypalEmail}).${
+        data.paypalPayoutId ? ` Transaction ID: ${data.paypalPayoutId}` : ''
+      }`,
+      type: MessageType.TEXT,
+      timestamp: new Date(),
+    });
+    await notificationMessage.save();
+  }
+
+  // ✅ Send approval email to DEVELOPER
+  if (developerEmail) {
+    try {
+      await this.emailService.sendPayoutApprovedEmail({
+        developerEmail,
+        developerName,
+        amount: payoutRequest.amount,
+        paypalEmail: developerPaypalEmail,
+        orderTitle: order?.title || 'Your order',
+        paypalPayoutId: data.paypalPayoutId,
+        notes: data.notes,
+        adminName: `${admin.firstName || ''} ${admin.lastName || ''}`.trim() || admin.username,
+      });
+    } catch (emailErr) {
+      console.error('Failed to send payout approval email:', emailErr);
+    }
+  }
+
+  console.log(`✅ Admin ${admin.username} approved payout: $${payoutRequest.amount} to ${developerPaypalEmail}`);
+
+  return { message: 'Payout approved successfully', payoutRequest };
+}
+
+// ✅ Reject Payout
+async rejectPayout(
+  adminId: string,
+  payoutRequestId: string,
+  data: { reason: string },
+): Promise<any> {
+  const admin = await this.adminModel.findById(adminId);
+  if (!admin) throw new NotFoundException('Admin not found');
+
+  const payoutRequest = await this.payoutRequestModel
+    .findById(payoutRequestId)
+    .populate('orderId');
+
+  if (!payoutRequest) throw new NotFoundException('Payout request not found');
+
+  if (payoutRequest.status !== 'pending') {
+    throw new BadRequestException('Payout request has already been processed');
+  }
+
+  // ✅ Get developer info
+  let developer: any;
+  if (payoutRequest.developerModel === 'Company') {
+    developer = await this.companyModel.findById(payoutRequest.developerId);
+  } else {
+    developer = await this.userModel.findById(payoutRequest.developerId);
+  }
+
+  const developerEmail = developer?.email;
+  const developerName =
+    developer?.companyName ||
+    `${developer?.firstName || ''} ${developer?.lastName || ''}`.trim() ||
+    'Developer';
+
+  // ✅ Count how many times rejected after this one
+  const totalRejections = await this.payoutRequestModel.countDocuments({
+    orderId: payoutRequest.orderId,
+    status: 'rejected',
+  });
+  const newRejectionCount = totalRejections + 1; // this rejection counts too
+
+  // ✅ Update payout request
+  payoutRequest.status = 'rejected' as any;
+  payoutRequest.processedAt = new Date();
+  payoutRequest.processedBy = new Types.ObjectId(adminId);
+  payoutRequest.adminNotes = data.reason;
+  await payoutRequest.save();
+
+  // ✅ Create chat notification message
+  const order = payoutRequest.orderId as any;
+  const serviceId = order?.serviceId?._id || order?.serviceId;
+
+  const contactSupportNote =
+    newRejectionCount >= 3
+      ? ' You have reached the maximum number of attempts. Please contact supports@krevv.com for further assistance.'
+      : ` You may re-submit your request (${newRejectionCount} of 3 attempts used).`;
+
+  if (serviceId) {
+    const notificationMessage = new this.orderMessageModel({
+      serviceId,
+      orderId: order._id,
+      senderId: new Types.ObjectId(adminId),
+      senderModel: 'User',
+      text: `❌ Payout request rejected. Reason: ${data.reason}.${contactSupportNote}`,
+      type: MessageType.TEXT,
+      timestamp: new Date(),
+    });
+    await notificationMessage.save();
+  }
+
+  // ✅ Send rejection email to DEVELOPER
+  if (developerEmail) {
+    try {
+      await this.emailService.sendPayoutRejectedEmail({
+        developerEmail,
+        developerName,
+        amount: payoutRequest.amount,
+        orderTitle: order?.title || 'Your order',
+        reason: data.reason,
+        attemptsUsed: newRejectionCount,
+        canRetry: newRejectionCount < 3,
+        adminName: `${admin.firstName || ''} ${admin.lastName || ''}`.trim() || admin.username,
+      });
+    } catch (emailErr) {
+      console.error('Failed to send payout rejection email:', emailErr);
+    }
+  }
+
+  console.log(`❌ Admin ${admin.username} rejected payout (attempt ${newRejectionCount}/3) for request ${payoutRequestId}`);
+
+  return { message: 'Payout rejected successfully', payoutRequest };
+}
+
+// ✅ Get Payout Dashboard Stats
+async getPayoutDashboardStats(): Promise<any> {
+  try {
+    const payoutRequests = await this.payoutRequestModel.find().exec();
+    const orders = await this.orderModel.find({ status: 'completed' }).exec();
+
+    const last30Days = new Date();
+    last30Days.setDate(last30Days.getDate() - 30);
+
+    const recentPayouts = payoutRequests.filter(
+      p => p.requestedAt && new Date(p.requestedAt) > last30Days
+    );
+
+    return {
+      payoutRequests: {
+        total: payoutRequests.length,
+        pending: payoutRequests.filter(p => p.status === 'pending').length,
+        approved: payoutRequests.filter(p => p.status === 'approved').length,
+        rejected: payoutRequests.filter(p => p.status === 'rejected').length,
+        last30Days: recentPayouts.length,
+      },
+      amounts: {
+        totalPending: payoutRequests
+          .filter(p => p.status === 'pending')
+          .reduce((sum, p) => sum + p.amount, 0),
+        totalApproved: payoutRequests
+          .filter(p => p.status === 'approved')
+          .reduce((sum, p) => sum + p.amount, 0),
+        last30Days: recentPayouts.reduce((sum, p) => sum + p.amount, 0),
+      },
+      completedOrders: {
+        total: orders.length,
+        awaitingPayout: orders.filter(o => {
+          // Check if order has no payout request yet
+          return !payoutRequests.find(p => p.orderId.toString() === o._id.toString());
+        }).length,
+      },
+    };
+  } catch (error) {
+    console.error('Error fetching payout dashboard stats:', error);
+    throw new InternalServerErrorException('Failed to fetch payout stats');
+  }
+}
+
+
 
 }

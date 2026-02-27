@@ -268,4 +268,46 @@ async getMarketplaceDashboardStats() {
   return this.adminService.getMarketplaceDashboardStats();
 }
 
+// ─── PAYOUTS ─────────────────────────────────────────────────────────────────
+
+// ✅ Stats MUST come before /:payoutRequestId to avoid being swallowed by the param
+@Get('payouts/stats/dashboard')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getPayoutDashboardStats() {
+  return this.adminService.getPayoutDashboardStats();
+}
+
+@Get('payouts')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getAllPayoutRequests() {
+  return this.adminService.getAllPayoutRequests();
+}
+
+@Get('payouts/:payoutRequestId')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async getPayoutRequestById(@Param('payoutRequestId') payoutRequestId: string) {
+  return this.adminService.getPayoutRequestById(payoutRequestId);
+}
+
+@Post('payouts/:payoutRequestId/approve')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async approvePayout(
+  @Request() req: any,
+  @Param('payoutRequestId') payoutRequestId: string,
+  @Body() body: { paypalPayoutId?: string; notes?: string },
+) {
+  const adminId = req.user?.sub || req.user?.userId;
+  return this.adminService.approvePayout(adminId, payoutRequestId, body);
+}
+
+@Post('payouts/:payoutRequestId/reject')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async rejectPayout(
+  @Request() req: any,
+  @Param('payoutRequestId') payoutRequestId: string,
+  @Body() body: { reason: string },
+) {
+  const adminId = req.user?.sub || req.user?.userId;
+  return this.adminService.rejectPayout(adminId, payoutRequestId, body);
+}
 }
