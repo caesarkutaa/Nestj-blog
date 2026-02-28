@@ -34,6 +34,12 @@ export enum IndustryType {
   OTHER = 'Other',
 }
 
+export enum CompanyJobStatus {
+  ACTIVE = 'active',
+  CLOSED = 'closed',
+  DRAFT = 'draft',
+}
+
 @Schema({ timestamps: true })
 export class Company extends Document {
   // =============================================
@@ -210,7 +216,7 @@ blockReason?: string;
   @Prop({ default: 0 })
   totalReviews: number;
 
-
+ 
 
   // Timestamps
   createdAt: Date;

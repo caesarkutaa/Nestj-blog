@@ -330,28 +330,30 @@ export class CompanyController {
     }
   }
 
-  @Patch('jobs/:id/status')
-  @UseGuards(CompanyAuthGuard)
-  async updateJobStatus(
-    @Request() req,
-    @Param('id') jobId: string,
-    @Body() dto: UpdateJobStatusDto,
-  ) {
-    try {
-      // ✅ FIXED: Use req.company
-      const job = await this.companyService.updateJobStatus(req.company.id, jobId, dto.status);
-      return {
-        success: true,
-        message: `Job status updated to ${dto.status}`,
-        data: job,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to update job status',
-        error.status || HttpStatus.BAD_REQUEST,
-      );
+ @Patch('jobs/:id/status')
+@UseGuards(CompanyAuthGuard)
+async updateJobStatus(
+  @Request() req,
+  @Param('id') jobId: string,
+  @Body() dto: UpdateJobStatusDto,
+) {
+  try {
+    if (!dto.status) {
+      throw new HttpException('Status is required', HttpStatus.BAD_REQUEST);
     }
+    const job = await this.companyService.updateJobStatus(req.company.id, jobId, dto.status);
+    return {
+      success: true,
+      message: `Job status updated to ${dto.status}`,
+      data: job,
+    };
+  } catch (error) {
+    throw new HttpException(
+      error.message || 'Failed to update job status',
+      error.status || HttpStatus.BAD_REQUEST,
+    );
   }
+}
 
   @Delete('jobs/:id')
   @UseGuards(CompanyAuthGuard)
@@ -603,24 +605,27 @@ export class CompanyController {
     }
   }
 
-  @Patch('admin/:id/status')
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  async updateCompanyStatus(
-    @Param('id') companyId: string,
-    @Body() dto: UpdateJobStatusDto,
-  ) {
-    try {
-      const company = await this.companyService.updateCompanyStatus(companyId, dto.status);
-      return {
-        success: true,
-        message: `Company status updated to ${dto.status}`,
-        data: company,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || 'Failed to update company status',
-        error.status || HttpStatus.BAD_REQUEST,
-      );
+ @Patch('admin/:id/status')
+@UseGuards(JwtAuthGuard, AdminGuard)
+async updateCompanyStatus(
+  @Param('id') companyId: string,
+  @Body() dto: UpdateJobStatusDto,
+) {
+  try {
+    if (!dto.status) {
+      throw new HttpException('Status is required', HttpStatus.BAD_REQUEST);
     }
+    const company = await this.companyService.updateCompanyStatus(companyId, dto.status);
+    return {
+      success: true,
+      message: `Company status updated to ${dto.status}`,
+      data: company,
+    };
+  } catch (error) {
+    throw new HttpException(
+      error.message || 'Failed to update company status',
+      error.status || HttpStatus.BAD_REQUEST,
+    );
   }
+}
 }

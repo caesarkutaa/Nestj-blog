@@ -73,6 +73,12 @@ export class MarketplaceController {
     return await this.marketplaceService.getMyPostedServices(clientId);
   }
 
+ 
+@Get('user/:userId/services')
+async getUserServices(@Param('userId') userId: string) {
+  return await this.marketplaceService.getUserServices(userId);
+}
+
   @Put('services/:serviceId')
   @UseGuards(AuthGuard('jwt'))
   async updateService(

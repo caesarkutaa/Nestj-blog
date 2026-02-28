@@ -7,6 +7,8 @@ import { Company, CompanyStatus } from './schema/company.schema';
 import { Job, JobStatus } from '../job/schema/job.schema';
 import { RegisterCompanyDto, CreateJobDto } from './dto/register-company.dto';
 import { EmailService } from '../email/email.service';
+import { UpdateJobDto } from './dto/register-company.dto';
+
 
 /**
  * Define a Document type that includes your custom schema methods   
@@ -386,18 +388,26 @@ async getCompanyJobs(companyId: string, options: { page: number; limit: number; 
     return job;
   }
 
-  async updateJob(companyId: string, jobId: string, dto: any): Promise<Job> {
-    const job = await this.jobModel.findOneAndUpdate(
-      { _id: new Types.ObjectId(jobId), postedByCompany: new Types.ObjectId(companyId) },
-      { $set: dto },
-      { new: true, runValidators: true },
+  async updateJob(companyId: string, jobId: string, dto: UpdateJobDto): Promise<Job> {
+  // ✅ Validate status value if provided
+  if (dto.status && !Object.values(JobStatus).includes(dto.status as any)) {
+    throw new HttpException(
+      `Invalid status. Must be one of: ${Object.values(JobStatus).join(', ')}`,
+      HttpStatus.BAD_REQUEST,
     );
-
-    if (!job) throw new HttpException('Job not found', HttpStatus.NOT_FOUND);
-
-    this.logger.log(`JOB UPDATED: ${JSON.stringify(job.toObject(), null, 2)}`);
-    return job;
   }
+
+  const job = await this.jobModel.findOneAndUpdate(
+    { _id: new Types.ObjectId(jobId), postedByCompany: new Types.ObjectId(companyId) },
+    { $set: dto },  // status is included in dto and gets saved here
+    { new: true, runValidators: true },
+  );
+
+  if (!job) throw new HttpException('Job not found', HttpStatus.NOT_FOUND);
+
+  this.logger.log(`JOB UPDATED (id=${jobId}, status=${dto.status || 'unchanged'})`);
+  return job;
+}
 
   async updateJobStatus(companyId: string, jobId: string, status: string): Promise<Job> {
     const job = await this.jobModel.findOneAndUpdate(

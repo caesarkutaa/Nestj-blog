@@ -83,6 +83,20 @@ export class MarketplaceService {
     return service;
   }
 
+
+  async getUserServices(userId: string) {
+  return await this.serviceModel
+    .find({
+      $or: [
+        { clientId: userId },
+        { clientId: new Types.ObjectId(userId) },
+      ],
+    })
+    .populate('clientId', 'firstName lastName email companyName')
+    .sort({ createdAt: -1 })
+    .exec();
+}
+
 async getMyOrders(userId: string) {
   // Get all orders where the user is the CLIENT (buyer)
   const orders = await this.orderModel
@@ -110,6 +124,7 @@ async getMyOrders(userId: string) {
       .sort({ createdAt: -1 })
       .exec();
   }
+
 
   async updateService(serviceId: string, clientId: string, updateData: any) {
     const service = await this.serviceModel.findById(serviceId);

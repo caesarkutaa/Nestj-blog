@@ -11,6 +11,8 @@ import {
   IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { CompanyJobStatus } from '../schema/company.schema';
+import { JobStatus } from 'src/job/schema/job.schema';
 
 // =============================================
 // REGISTER COMPANY DTO
@@ -300,7 +302,77 @@ export class CreateJobDto {
   @IsOptional()
   responsibilities?: string[];
 
+  @IsOptional()
+  @IsEnum(JobStatus)
+  status?: JobStatus;
+
 }
+
+export class UpdateJobDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  salary?: string;
+
+  @IsOptional()
+  @IsNumber()
+  salaryMin?: number;
+
+  @IsOptional()
+  @IsNumber()
+  salaryMax?: number;
+
+  @IsOptional()
+  @IsString()
+  experienceLevel?: string;
+
+  @IsOptional()
+  @IsEmail()
+  applicationEmail?: string;
+
+  @IsOptional()
+  @IsUrl()
+  applicationUrl?: string;
+
+  @IsOptional()
+  @IsDateString()
+  deadline?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  requirements?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  responsibilities?: string[];
+
+  // ✅ This is what the frontend toggle sends
+  @IsOptional()
+  @IsEnum(JobStatus)
+  status?: JobStatus;
+}
+
 
 // =============================================
 // FORGOT PASSWORD DTO
@@ -343,9 +415,9 @@ export class ChangePasswordDto {
 // UPDATE JOB STATUS DTO
 // =============================================
 export class UpdateJobStatusDto {
-  @IsString()
-  @IsNotEmpty()
-  status: string;
+   @IsOptional()
+  @IsEnum(JobStatus)
+  status?: JobStatus;
 }
 
 // =============================================
