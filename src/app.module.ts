@@ -20,6 +20,8 @@ import { MarketplaceModule } from './marketplace/marketplace.module';
 import { NotificationsController } from './notifications/notifications.controller';
 import { NotificationsModule } from './notifications/notifications.module';
 
+import { ChatModule } from './chat/chat.module';
+
 @Module({
   imports: [
     // ✅ Global configuration
@@ -84,6 +86,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     CompanyModule,
     MarketplaceModule,
     NotificationsModule,
+    ChatModule,
   ],
   providers: [CacheService],
   exports: [CacheService],

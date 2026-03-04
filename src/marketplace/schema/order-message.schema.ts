@@ -43,6 +43,18 @@ senderId: Types.ObjectId;
     orderId?: string;
   };
 
+@Prop({ type: Types.ObjectId, refPath: 'participantModel' })
+participantId?: Types.ObjectId;  // ✅ Which visitor this message thread belongs to
+
+@Prop({ type: String, enum: ['User', 'Company'] })
+participantModel?: string;
+
+ @Prop({ type: Types.ObjectId, refPath: 'recipientModel' })
+  recipientId?: Types.ObjectId;
+
+  @Prop({ type: String, enum: ['User', 'Company'] })
+  recipientModel?: string;
+
   @Prop({ type: Object })
   orderDetails?: {
     title: string;

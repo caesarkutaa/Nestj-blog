@@ -33,6 +33,12 @@ export class CustomOrder extends Document {
   @Prop({ type: Types.ObjectId, refPath: 'developerModel', required: true })
   developerId: Types.ObjectId;
 
+@Prop({ type: Types.ObjectId, ref: 'DirectConversation' })            // ✅ add this
+conversationId?: Types.ObjectId;
+
+@Prop({ type: String, enum: ['marketplace', 'chat_order'], default: 'marketplace' })  // ✅ add this
+source?: string;
+
   @Prop({ required: true })
   title: string;
 

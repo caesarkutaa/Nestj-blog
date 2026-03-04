@@ -201,6 +201,14 @@ async getMyOrders(@Req() req: any) {
   return await this.marketplaceService.getMyOrders(userId);
 }
 
+@Get('my-developer-orders')
+@UseGuards(JwtAuthGuard)
+async getMyDeveloperOrders(@Req() req: any) {
+  const developerId = this.getUserId(req);
+  return await this.marketplaceService.getMyDeveloperOrders(developerId);
+}
+
+
 @Post('orders/:orderId/create-paypal-order')
 @UseGuards(JwtAuthGuard)
 async createPaypalOrder(
@@ -214,7 +222,7 @@ async createPaypalOrder(
   );
 }
 
-
+1
 @Post('orders/:orderId/capture-paypal-order')
 @UseGuards(JwtAuthGuard)
 async capturePaypalOrder(
@@ -336,28 +344,69 @@ async getMyPayoutRequests(@Req() req: any) {
 
   // ==================== CHAT MESSAGES ====================
 
-  @Get('services/:serviceId/messages')
-  @UseGuards(AuthGuard('jwt'))
-  async getServiceMessages(@Request() req: any, @Param('serviceId') serviceId: string) {
-    const userId = this.getUserId(req);
-    return await this.marketplaceService.getServiceMessages(serviceId, userId);
-  }
 
-  @Post('services/:serviceId/messages')
-  @UseGuards(AuthGuard('jwt'))
-  async sendMessage(
-    @Request() req: any,
-    @Param('serviceId') serviceId: string,
-    @Body() body: { text: string },
-  ) {
-    const senderId = this.getUserId(req);
-    const message = await this.marketplaceService.sendMessage(serviceId, body.text, senderId);
+@Get('services/:serviceId/messages')
+async getServiceMessages(
+  @Param('serviceId') serviceId: string,
+  @Req() req: any,
+  @Query('participantId') participantId?: string,  // ✅ NEW
+) {
+  const userId = req.user?.sub || req.user?.userId || req.user?.id;
+  return this.marketplaceService.getServiceMessages(serviceId, userId, participantId);
+}
 
-    // Emit socket event
-    this.chatGateway.server.to(`service_${serviceId}`).emit('newMessage', message);
+  // marketplace.controller.ts
+@Post('services/:serviceId/messages')
+@UseGuards(AuthGuard('jwt'))
+async sendMessage(
+  @Request() req: any,
+  @Param('serviceId') serviceId: string,
+  @Body() body: { text: string; participantId?: string },  // ✅ add participantId
+) {
+  const senderId = this.getUserId(req);
+  const message = await this.marketplaceService.sendMessage(
+    serviceId,
+    body.text,
+    senderId,
+    body.participantId,  // ✅ pass it through
+  );
 
-    return message;
-  }
+  // ✅ Emit to the correct PRIVATE room, not the generic service room
+  const room = body.participantId
+    ? `service-${serviceId}-p-${body.participantId}`
+    : `service-${serviceId}`;
+
+  this.chatGateway.server.to(room).emit('newMessage', message);
+
+  return message;
+}
+
+
+
+@Get('my-chats')
+@UseGuards(AuthGuard('jwt'))
+async getMyChats(@Request() req: any) {
+  const userId = this.getUserId(req);
+  return await this.marketplaceService.getMyChats(userId);
+}
+
+
+@Get('services/:serviceId/messages/participant/:participantId')
+@UseGuards(AuthGuard('jwt'))
+async getServiceMessagesByParticipant(
+  @Request() req: any,
+  @Param('serviceId') serviceId: string,
+  @Param('participantId') participantId: string,
+) {
+  const userId = this.getUserId(req);
+  return await this.marketplaceService.getServiceMessagesByParticipant(
+    serviceId,
+    userId,
+    participantId,
+  );
+}
+
+
 
   // ==================== STATS ====================
 

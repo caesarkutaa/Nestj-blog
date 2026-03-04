@@ -14,6 +14,8 @@ import { OrderMessage, MessageType } from './schema/order-message.schema';
 import { PayoutRequest, PayoutRequestStatus } from './schema/payout-request.schema'; 
 import axios from 'axios';
 import { EmailService } from 'src/email/email.service';
+import { DirectMessage, OrderRequestStatus } from '../chat/schema/direct-conversation.schema';
+
 
 @Injectable()
 export class MarketplaceService {
@@ -34,6 +36,8 @@ export class MarketplaceService {
     private orderMessageModel: Model<OrderMessage>,
     @InjectModel(PayoutRequest.name)
     private payoutRequestModel: Model<PayoutRequest>,
+    @InjectModel(DirectMessage.name)
+private directMessageModel: Model<DirectMessage>,
     private readonly emailService: EmailService,
   private readonly configService: ConfigService,
 
@@ -188,19 +192,32 @@ async getMyOrders(userId: string) {
     return saved;
   }
 
-  async getServiceApplications(serviceId: string, clientId: string) {
-    const service = await this.serviceModel.findById(serviceId);
-    if (!service) throw new NotFoundException('Service not found');
-    if (service.clientId.toString() !== clientId) {
-      throw new ForbiddenException('You can only view applications for your own services');
-    }
+ async getServiceApplications(serviceId: string, clientId: string) {
+  const service = await this.serviceModel.findById(serviceId);
+  if (!service) throw new NotFoundException('Service not found');
 
-    return await this.applicationModel
-      .find({ serviceId: new Types.ObjectId(serviceId) })
-      .populate('developerId', 'firstName lastName email profilePicture bio skills paypalEmail paypalVerified companyName')
-      .sort({ appliedAt: -1 })
-      .exec();
+  const isOwner = service.clientId.toString() === clientId;
+  
+  // ✅ Also allow assigned developer to see applications
+  const assignedDevId = service.assignedDeveloper?.toString();
+  const isAssignedDev = assignedDevId === clientId;
+
+  if (!isOwner && !isAssignedDev) {
+    throw new ForbiddenException('Access denied');
   }
+
+  // ✅ If it's the assigned developer, only return their own application
+  const query: any = { serviceId: new Types.ObjectId(serviceId) };
+  if (isAssignedDev && !isOwner) {
+    query.developerId = new Types.ObjectId(clientId);
+  }
+
+  return await this.applicationModel
+    .find(query)
+    .populate('developerId', 'firstName lastName email profilePicture bio skills paypalEmail paypalVerified companyName')
+    .sort({ appliedAt: -1 })
+    .exec();
+}
 
   async getMyApplications(developerId: string) {
     return await this.applicationModel
@@ -347,15 +364,26 @@ async createCustomOrder(
   };
 }
 
+async getMyDeveloperOrders(developerId: string) {
+  return await this.orderModel
+    .find({
+      developerId: new Types.ObjectId(developerId),
+      status: { $in: ['paid', 'in_progress', 'delivered', 'completed'] },
+    })
+    .populate('clientId', 'firstName lastName email companyName')
+    .populate('serviceId', 'title description category')
+    .sort({ paidAt: -1, createdAt: -1 })
+    .exec();
+}
+
+
 async getOrderById(orderId: string) {
   const order = await this.orderModel.findById(orderId)
-    .populate('developerId', 'firstName lastName email paypalEmail companyName') 
-    .populate('serviceId', 'title description deliveryTime');   
+    .populate('developerId', 'firstName lastName email paypalEmail companyName')
+    .populate('serviceId', 'title description deliveryTime')
+    .select('+conversationId'); // ✅ ensure conversationId is included
 
-  if (!order) {
-    throw new NotFoundException('Order not found');
-  }
-
+  if (!order) throw new NotFoundException('Order not found');
   return order;
 }
 
@@ -365,15 +393,20 @@ async getServiceOrders(serviceId: string, userId: string) {
   const service = await this.serviceModel.findById(serviceId);
   if (!service) throw new NotFoundException('Service not found');
 
-  // FIX: Developer (service owner) OR client (buyer) can view orders
   const isServiceOwner = service.clientId.toString() === userId;
   const hasOrder = await this.orderModel.findOne({
     serviceId: new Types.ObjectId(serviceId),
     clientId: new Types.ObjectId(userId),
   });
 
-  if (!isServiceOwner && !hasOrder) {
-    throw new ForbiddenException('Access denied');
+  // ✅ Allow inquirers through — they just get an empty array
+  const hasParticipated = await this.orderMessageModel.findOne({
+    serviceId: new Types.ObjectId(serviceId),
+    senderId: new Types.ObjectId(userId),
+  });
+
+  if (!isServiceOwner && !hasOrder && !hasParticipated) {
+    return []; // ✅ Inquirer — no orders yet, return empty instead of 403
   }
 
   return await this.orderModel
@@ -383,8 +416,6 @@ async getServiceOrders(serviceId: string, userId: string) {
     .sort({ createdAt: -1 })
     .exec();
 }
-
-
 
 
   // ==================== PAYPAL PAYMENT ====================
@@ -522,11 +553,18 @@ async capturePayPalOrderForCustomOrder(
     if (response.data.status === 'COMPLETED') {
       // ✅ Money is now in YOUR PayPal account
       order.status = OrderStatus.PAID;
-      order.paypalCaptureId =
-        response.data.purchase_units[0].payments.captures[0].id;
-      order.paidAt = new Date();
-      await order.save();
+order.paypalCaptureId = response.data.purchase_units[0].payments.captures[0].id;
+order.paidAt = new Date();
+await order.save();
 
+// ✅ Update the DirectMessage orderRequest status to 'paid'
+// so the chat UI shows payment complete instead of Accept/Decline
+const updateResult = await this.directMessageModel.findOneAndUpdate(
+  { 'orderRequest.orderId': order._id.toString() },
+  { $set: { 'orderRequest.status': 'paid' } },
+  { new: true }
+);
+console.log('✅ DirectMessage paid update result:', updateResult?._id, updateResult?.orderRequest?.status);
       // ✅ Determine sender model
       let senderModel: 'User' | 'Company' = 'User';
       if (order.clientModel) {
@@ -631,7 +669,9 @@ async capturePayPalOrderForCustomOrder(
         console.error('⚠️ Failed to send new order email to developer:', emailError);
       }
 
-      return { success: true, order, message: paymentMessage };
+      return { success: true, order, message: paymentMessage,
+         conversationId: (order as any).conversationId?.toString() || null,
+      };
     }
 
     throw new BadRequestException('Payment not completed');
@@ -1163,24 +1203,42 @@ async acceptDelivery(
 
 
 // 4. ✅ sendMessage - Regular chat message
-async sendMessage(serviceId: string, text: string, senderId: string) {
-  // ✅ FIX: Determine sender model
-  let senderModel: 'User' | 'Company' = 'User';
-  
-  try {
-    const company = await this.companyModel.findById(senderId);
-    if (company) {
-      senderModel = 'Company';
+async sendMessage(
+  serviceId: string,
+  text: string,
+  senderId: string,
+  recipientId?: string,
+) {
+  const service = await this.serviceModel.findById(serviceId);
+  if (!service) throw new NotFoundException('Service not found');
+
+  const ownerId = service.clientId.toString();
+  const isOwner = senderId === ownerId;
+
+  // 👇 Determine participant
+  let participantId: string;
+
+  if (isOwner) {
+    if (!recipientId) {
+      throw new BadRequestException(
+        'Developer must specify recipientId when replying',
+      );
     }
-  } catch (err) {
-    // Default to User
+    participantId = recipientId; // replying to visitor
+  } else {
+    participantId = senderId; // visitor sending first message
   }
 
-  // ✅ FIX: Add senderModel
+  // Determine sender model
+  let senderModel: 'User' | 'Company' = 'User';
+  const company = await this.companyModel.findById(senderId);
+  if (company) senderModel = 'Company';
+
   const message = await this.orderMessageModel.create({
     serviceId: new Types.ObjectId(serviceId),
     senderId: new Types.ObjectId(senderId),
-    senderModel: senderModel, // ✅ REQUIRED
+    senderModel,
+    participantId: new Types.ObjectId(participantId), // ✅ CRITICAL FIX
     text,
     type: MessageType.TEXT,
     timestamp: new Date(),
@@ -1188,6 +1246,7 @@ async sendMessage(serviceId: string, text: string, senderId: string) {
 
   return message;
 }
+
   // async acceptDelivery(
   //   orderId: string,
   //   clientId: string,
@@ -1229,59 +1288,173 @@ async sendMessage(serviceId: string, text: string, senderId: string) {
 
   // ==================== CHAT MESSAGES ====================
 
- async getServiceMessages(serviceId: string, userId: string) {
+async getServiceMessages(serviceId: string, userId: string, participantId?: string) {
   const service = await this.serviceModel.findById(serviceId);
   if (!service) throw new NotFoundException('Service not found');
 
-  const isServiceOwner = service.clientId.toString() === userId;
+  const ownerIdStr = service.clientId.toString();
+  const isOwner = userId === ownerIdStr;
 
-  const hasOrder = await this.orderModel.findOne({
-    serviceId: new Types.ObjectId(serviceId),
-    clientId: new Types.ObjectId(userId),
-  });
+  let query: any = { serviceId: new Types.ObjectId(serviceId) };
 
-  if (!isServiceOwner && !hasOrder) {
-    throw new ForbiddenException('Access denied');
-  }
+ if (isOwner && participantId) {
+  query.participantId = new Types.ObjectId(participantId);
+} else if (!isOwner) {
+  query.participantId = new Types.ObjectId(userId);
+}
 
-  // ✅ FIX: Populate senderId dynamically based on senderModel
   const messages = await this.orderMessageModel
-    .find({ serviceId: new Types.ObjectId(serviceId) })
+    .find(query)
     .sort({ timestamp: 1 })
     .exec();
 
-  // Manually populate based on senderModel
   const populatedMessages = await Promise.all(
     messages.map(async (msg) => {
       const msgObj = msg.toObject();
-      
       if (msgObj.senderModel === 'Company') {
         const company = await this.companyModel
           .findById(msgObj.senderId)
           .select('firstName lastName companyName email')
           .lean();
-        
-        return {
-          ...msgObj,
-          senderId: company || msgObj.senderId,
-        };
+        return { ...msgObj, senderId: company || msgObj.senderId };
       } else {
-        // Assume User model - you need to inject UserModel
         const user = await this.userModel
           .findById(msgObj.senderId)
           .select('firstName lastName email')
           .lean();
-        
-        return {
-          ...msgObj,
-          senderId: user || msgObj.senderId,
-        };
+        return { ...msgObj, senderId: user || msgObj.senderId };
       }
     })
   );
 
   return populatedMessages;
 }
+
+
+async getMyChats(userId: string) {
+  // ✅ Find threads where user IS the participant — including old messages where
+  // participantId wasn't set but they were the sender
+  const myMessages = await this.orderMessageModel
+    .find({
+      $or: [
+        { participantId: new Types.ObjectId(userId) },
+        { participantId: { $exists: false }, senderId: new Types.ObjectId(userId) },
+        { participantId: null, senderId: new Types.ObjectId(userId) },
+      ],
+    })
+    .sort({ timestamp: -1 })
+    .exec();
+
+  if (myMessages.length === 0) return [];
+
+  const serviceMap = new Map<string, { lastMessage: any }>();
+
+  for (const msg of myMessages) {
+    const sid = msg.serviceId.toString();
+    if (!serviceMap.has(sid)) {
+      serviceMap.set(sid, { lastMessage: msg });
+    }
+  }
+
+  const results = await Promise.all(
+    Array.from(serviceMap.entries()).map(async ([sid, data]) => {
+      try {
+        const service = await this.serviceModel
+          .findById(sid)
+          .populate('clientId', 'firstName lastName companyName email')
+          .lean();
+
+        if (!service) return null;
+
+        // ✅ Don't return if this user IS the service owner (they're the developer, not visitor)
+        const ownerIdStr = (service as any).clientId?._id?.toString() || (service as any).clientId?.toString();
+        if (ownerIdStr === userId) return null;
+
+        return {
+          serviceId: sid,
+          serviceTitle: (service as any).title,
+          serviceCategory: (service as any).category,
+          developer: (service as any).clientId,
+          lastMessageText: data.lastMessage.text,
+          lastMessageTime: data.lastMessage.timestamp,
+          participantId: userId,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results.filter(Boolean);
+}
+ 
+
+async getServiceMessagesByParticipant(
+  serviceId: string,
+  userId: string,
+  participantId: string,
+) {
+  const service = await this.serviceModel.findById(serviceId);
+  if (!service) throw new NotFoundException('Service not found');
+
+  const isServiceOwner = service.clientId.toString() === userId;
+  const isParticipant = participantId === userId;
+
+  // Allow if you're the service owner OR the participant
+  if (!isServiceOwner && !isParticipant) {
+    throw new ForbiddenException('Access denied');
+  }
+
+  // ✅ Filter messages between service owner and this specific participant
+  const messages = await this.orderMessageModel
+    .find({
+      serviceId: new Types.ObjectId(serviceId),
+      $or: [
+        // Messages from participant to owner
+        { senderId: new Types.ObjectId(participantId) },
+        // Messages from owner to participant  
+        {
+          senderId: new Types.ObjectId(service.clientId),
+          // If we had a recipientId field, we'd filter here too
+          // For now, we'll filter in code below
+        },
+      ],
+    })
+    .sort({ timestamp: 1 })
+    .exec();
+
+  // ✅ Manually populate based on senderModel
+  const populatedMessages = await Promise.all(
+    messages.map(async (msg) => {
+      const msgObj = msg.toObject();
+
+      if (msgObj.senderModel === 'Company') {
+        const company = await this.companyModel
+          .findById(msgObj.senderId)
+          .select('firstName lastName companyName email')
+          .lean();
+
+        return {
+          ...msgObj,
+          senderId: company || msgObj.senderId,
+        };
+      } else {
+        const user = await this.userModel
+          .findById(msgObj.senderId)
+          .select('firstName lastName email')
+          .lean();
+
+        return {
+          ...msgObj,
+          senderId: user || msgObj.senderId,
+        };
+      }
+    }),
+  );
+
+  return populatedMessages;
+}
+
 
 
   // ==================== STATS (Keep as is) ====================

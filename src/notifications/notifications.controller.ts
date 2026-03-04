@@ -30,7 +30,7 @@ export class NotificationsController {
   }
 
   // ✅ Mark notifications as read for a specific service
-  @Post('mark-read/:serviceId')
+  @Post('mark-read/:serviceId/:participantId')
   async markReadByService(
     @Request() req: any,
     @Param('serviceId') serviceId: string,

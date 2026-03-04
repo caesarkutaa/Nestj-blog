@@ -15,6 +15,7 @@ import { User, UserSchema } from '../user/schemas/user.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
 import  { PayoutRequestStatus, PayoutRequestSchema } from './schema/payout-request.schema';
 import  {EmailService} from '../email/email.service';
+import { DirectMessage, DirectMessageSchema, OrderRequestStatus } from '../chat/schema/direct-conversation.schema';
 
 
 
@@ -30,6 +31,7 @@ import  {EmailService} from '../email/email.service';
      { name: 'User', schema: UserSchema },
       { name: ServiceMessage.name, schema: ServiceMessageSchema },
       { name: 'PayoutRequest', schema: PayoutRequestSchema },
+      { name: DirectMessage.name, schema: DirectMessageSchema },
     ]),
     NotificationsModule,
   ],
