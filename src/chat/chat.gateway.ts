@@ -67,7 +67,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .to(`conversation_${data.conversationId}`)
       .emit('newMessage', data.message);
 
-    console.log(`💬 Message sent to conversation ${data.conversationId}`);
+   
   }
 
   // ✅ Called from chat.service.ts after saving a message to DB
@@ -87,7 +87,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         senderId: data.senderId,
       });
 
-    console.log(`🔔 Notification sent to user_${recipientId}`);
+   
   }
 
   sendNotification(conversationId: string, notification: any) {

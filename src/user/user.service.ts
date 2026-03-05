@@ -13,7 +13,7 @@ export class UserService {
   ) {}
 
   async findOne(id: string): Promise<User> {
-    console.log('🔍 Finding user by ID:', id);
+   
     
     const user = await this.userModel
       .findById(id)
@@ -32,8 +32,7 @@ export class UserService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
-    console.log('📝 Updating user ID:', id);
-    console.log('📝 Update data:', updateUserDto);
+  
     
     const user = await this.userModel
       .findByIdAndUpdate(id, updateUserDto, { new: true })
