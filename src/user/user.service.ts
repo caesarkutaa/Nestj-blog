@@ -44,7 +44,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    console.log('✅ User updated:', user.email);
+    console.log('✅ User updated:', user.email);   
     return user;
   }
 }
