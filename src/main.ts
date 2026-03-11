@@ -32,6 +32,7 @@ async function bootstrap() {
       origin: process.env.ALLOWED_ORIGINS?.split(',') || [
         'https://www.krevv.com',
         'https://krevv.vercel.app',
+        'http://localhost:3000',
        'https://zany-waffle-x597wq9ggjcvxp5-3000.app.github.dev',
       ],
       credentials: true,

@@ -13,6 +13,7 @@ export class ApplicationService {
     private applicationModel: Model<Application>,
     @InjectModel(Job.name)
     private jobModel: Model<Job>,
+    @InjectModel('Company') private companyModel: Model<any>,
   ) {}
 
   async create(createApplicationDto: CreateApplicationDto, user: any): Promise<any> {
@@ -110,29 +111,41 @@ export class ApplicationService {
     return validApplications;
   }
 
- async findJobApplications(jobId: string, user: any): Promise<Application[]> {
+async findJobApplications(jobId: string, user: any): Promise<Application[]> {
   const targetJobId = new Types.ObjectId(jobId); 
 
   const job = await this.jobModel.findById(targetJobId).populate('postedBy');
   if (!job) throw new NotFoundException('Job not found');
 
-  // Ownership check
   const postedById = (job.postedBy as any)?._id?.toString();
   const requesterId = user._id?.toString();
+  const jobCompanyName = (job as any).company;
 
-  if (postedById !== requesterId && !user.isAdmin) {
+  let isCompanyOwner = false;
+  if (jobCompanyName && this.companyModel) {
+    const company = await this.companyModel.findOne({ companyName: jobCompanyName });
+    if (company && company._id.toString() === requesterId) {
+      isCompanyOwner = true;
+    }
+  }
+
+  const isOwner = postedById === requesterId || isCompanyOwner || user.isAdmin;
+  if (!isOwner) {
     throw new ForbiddenException('Access denied');
   }
 
   const applications = await this.applicationModel
-    .find({ job: targetJobId }) // Use the casted ID
+    .find({ job: targetJobId })
     .populate('user') 
     .exec();
 
-  console.log(`Debug: Found ${applications.length} total docs for job ${jobId}`);
+  console.log(`✅ Returning ${applications.length} applications`);
+
+  // ✅ FIXED: Return all applications, don't filter
+  return applications;
   
-  
-  return applications.filter(app => app.user !== null);
+  // ❌ OLD CODE (this was removing your application):
+  // return applications.filter(app => app.user !== null);
 }
 
 
@@ -176,36 +189,54 @@ export class ApplicationService {
 }
 
   async updateStatus(
-    id: string,
-    updateStatusDto: UpdateApplicationStatusDto,
-    user: any,
-  ): Promise<any> {
-    const application = await this.findOne(id);
+  id: string,
+  updateStatusDto: UpdateApplicationStatusDto,
+  user: any,
+): Promise<any> {
+  const application = await this.findOne(id);
+  const job = application.job as any;
+  const requesterId = user._id?.toString();
 
-    const job = application.job as any;
-    
-    // Check if user is admin or job owner
-    const isAdmin = user.isAdmin;
-    const isOwner = job.postedBy?._id?.toString() === user._id?.toString();
+  const isAdmin = user.isAdmin || user.role === UserRole.ADMIN;
 
-    if (!isAdmin && !isOwner && user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('You can only update applications for your own jobs');
-    }
+  // Check direct postedBy match
+  const postedById = job.postedBy?._id?.toString() || job.postedBy?.toString();
+  const isDirectOwner = postedById === requesterId;
 
-    const updatedApplication = await this.applicationModel
-      .findByIdAndUpdate(id, { status: updateStatusDto.status }, { new: true })
-      .populate('user', '-password')
-      .populate({
-        path: 'job',
-        populate: {
-          path: 'postedBy',
-          select: '-password',
-        },
-      })
-      .exec();
-
-    return updatedApplication;
+  // Check company ownership (same logic as findJobApplications)
+  let isCompanyOwner = false;
+  const jobCompanyName = job.company;
+  if (jobCompanyName) {
+    try {
+      const company = await (this as any).companyModel?.findOne({ companyName: jobCompanyName });
+      if (company && company._id.toString() === requesterId) {
+        isCompanyOwner = true;
+      }
+    } catch (_) {}
   }
+
+  const isOwner = isDirectOwner || isCompanyOwner || isAdmin;
+
+  console.log(`[updateStatus] requesterId=${requesterId} postedById=${postedById} isDirectOwner=${isDirectOwner} isCompanyOwner=${isCompanyOwner} isAdmin=${isAdmin}`);
+
+  if (!isOwner) {
+    throw new ForbiddenException('You can only update applications for your own jobs');
+  }
+
+  const updatedApplication = await this.applicationModel
+    .findByIdAndUpdate(id, { status: updateStatusDto.status }, { new: true })
+    .populate('user', '-password')
+    .populate({
+      path: 'job',
+      populate: {
+        path: 'postedBy',
+        select: '-password',
+      },
+    })
+    .exec();
+
+  return updatedApplication;
+}
 
   async remove(id: string, user: any): Promise<void> {
     const application = await this.findOne(id);
